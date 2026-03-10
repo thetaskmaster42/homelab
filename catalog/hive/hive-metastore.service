@@ -1,0 +1,34 @@
+[Unit]
+Description=Apache Hive Metastore Service
+After=network-online.target
+Wants=network-online.target
+
+# If you also want to wait for HDFS/YARN services, add:
+# After=hdfs.service yarn.service
+# Wants=hdfs.service yarn.service
+
+[Service]
+Type=simple
+User=spark
+Group=spark
+Environment=HIVE_HOME=/opt/hive
+Environment=HIVE_CONF_DIR=/opt/hive/conf
+Environment=JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+WorkingDirectory=/opt/hive
+
+# Optional: set JVM options, logging, etc.
+Environment=HADOOP_HOME=/opt/hadoop
+Environment=HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+Environment=HIVE_OPTS=-hiveconf hive.root.logger=INFO,console
+
+ExecStart=/opt/hive/bin/hive --service metastore
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5
+
+# Resource limits (tune as needed)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
