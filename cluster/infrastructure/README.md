@@ -3,12 +3,10 @@
 One ArgoCD `Application` manifest per addon. Synced automatically by the
 `infrastructure` root app.
 
-Planned addons, roughly in install order:
-
-| Addon | Purpose |
-|---|---|
-| `metallb` or k3s servicelb | LoadBalancer IPs on the LAN |
-| ingress (traefik, ships with k3s) | `<app>.rps-home.com` routing |
-| `cert-manager` | TLS for ingress hosts |
-| `nfs-provisioner` | StorageClass backed by portal's NFS export |
-| `kube-prometheus-stack` | Monitoring (port from `archive/Observability/`) |
+| Addon | Status | Purpose |
+|---|---|---|
+| `kube-prometheus-stack.yaml` | ✅ | Prometheus + Grafana + Alertmanager (NodePorts 30000–30002, `local-path` storage) |
+| storage | — | k3s built-in Rancher `local-path` StorageClass; nothing to install |
+| ingress | planned | traefik ships with k3s; `<app>.rps-home.com` routing config |
+| `cert-manager` | planned | TLS for ingress hosts |
+| `metallb` | maybe | LoadBalancer IPs on the LAN (k3s servicelb may be enough) |

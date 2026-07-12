@@ -6,15 +6,13 @@ cluster, and the applications that run on it (GitOps via ArgoCD).
 ## Hardware
 
 | Host | Device | Role |
-|---|---|---|
-| (TBD) | HP desktop | Proxmox VE — hosts the k3s control-plane container + worker containers |
-| portal | Raspberry Pi | OpenMediaVault — NFS / NAS |
-| (TBD) | Raspberry Pi | Pi-hole — DNS + DHCP for the network |
-| (TBD) | Raspberry Pi 5 | Dedicated to openclaw |
-| (TBD) | Raspberry Pi ×2 | k3s workers |
-| (TBD) | Dell laptop | Future k3s worker (currently out of network) |
-
-> TODO: fill in hostnames and static IPs/DHCP reservations for each node.
+|------|--------|-------|
+| server.rps-home.com | HP desktop | Proxmox VE — hosts the k3s control-plane container + worker containers |
+| portal.rps-home.com | Raspberry Pi | OpenMediaVault — NFS / NAS |
+| pihole.rps-home.com | Raspberry Pi | Pi-hole — DNS + DHCP for the network |
+| node-3.rps-home.com | Raspberry Pi 5 | Dedicated to openclaw |
+| node-1.rps-home.com, node-2.rps-home.com | Raspberry Pi ×2 | k3s workers |
+| shield.rps-home.com | Dell laptop | Future k3s worker (currently out of network) |
 
 ## Network
 
@@ -42,9 +40,10 @@ archive/          Pre-v2 content kept for reference (not maintained)
 
 ## Roadmap
 
-- [ ] Document node inventory (hostnames, IPs, DHCP reservations in Pi-hole)
+- [x] Document node inventory (hostnames; IPs/DHCP reservations still TBD)
 - [ ] Provision k3s: control-plane container on Proxmox, Pis + containers as workers
 - [ ] Bootstrap ArgoCD (`cluster/bootstrap/`)
-- [ ] Cluster addons: NFS storage class, ingress, cert-manager, monitoring
+- [ ] Cluster addons: ingress, cert-manager, monitoring (storage: k3s built-in
+      `local-path` for now, NFS from portal later if needed)
 - [ ] Migrate/redeploy applications (observability stack, data stack, …)
 - [ ] Join the Dell laptop as an additional worker

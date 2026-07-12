@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    # TODO: pin to the exact chart version after the first successful sync
+    # (helm search repo prometheus-community/kube-prometheus-stack)
+    targetRevision: '*'
+    helm:
+      # Keep the old release name so resource names match the v1 install
+      releaseName: prometheus-stack
+      valuesObject:
+        grafana:
+          service:
+            type: NodePort
+            nodePort: 30000
+          persistence:
+            enabled: true
+            storageClassName: local-path
+            size: 5Gi
+        alertmanager:
+          service:
+            type: NodePort
+            nodePort: 30001
+        prometheus:
+          service:
+            type: NodePort
+            nodePort: 30002
+          prometheusSpec:
+            retention: 7d
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: local-path
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 20Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The prometheus-operator CRDs exceed the client-side apply size limit
+      - ServerSideApply=true

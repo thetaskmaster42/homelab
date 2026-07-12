@@ -6,23 +6,38 @@ Lightweight Kubernetes cluster for the homelab.
 
 | Node | Runs on | Role |
 |---|---|---|
-| `k3s-master` | Proxmox CT/VM | control plane (server) |
-| workers | Proxmox CTs + Raspberry Pis | agents |
-| Dell laptop | bare metal | agent (joins later) |
+| `k3s-master` | Proxmox CT/VM on `server` | control plane |
+| `node-1`, `node-2` | Raspberry Pi | workers |
+| Proxmox CTs | `server` | workers |
+| `shield` | Dell laptop | worker (joins later) |
 
-Mixed architecture cluster: amd64 (Proxmox CTs, Dell) + arm64 (Pis). All
+`node-3` (Pi 5) is dedicated to openclaw and stays out of the cluster.
+
+Mixed-architecture cluster: amd64 (Proxmox CTs, shield) + arm64 (Pis). All
 container images must be multi-arch, or workloads pinned with
 `nodeSelector: kubernetes.io/arch`.
 
 ## Install
 
-> TODO: rewrite install scripts for this topology (the old ones are in
-> `archive/k3s-v1/`). Planned approach:
->
-> 1. `server.sh` — install k3s server on the control-plane node
->    (`--tls-san k3s-master.rps-home.com`, traefik/servicelb decisions TBD)
-> 2. `agent.sh` — join script taking the server URL + token
-> 3. Node inventory driven by DNS names from Pi-hole, not hardcoded IPs
+All hosts must resolve as `<hostname>.rps-home.com` (A records in Pi-hole)
+before installing.
+
+1. On the control-plane node:
+
+   ```sh
+   ./server.sh
+   ```
+
+   Prints the join token at the end. Keeps k3s defaults: traefik ingress,
+   servicelb, and the Rancher `local-path` StorageClass (used for all PVs
+   for now).
+
+2. On each worker:
+
+   ```sh
+   K3S_TOKEN=<token> ./agent.sh              # joins k3s-master.rps-home.com
+   K3S_TOKEN=<token> ./agent.sh other.rps-home.com   # or a different server
+   ```
 
 ## After install
 
