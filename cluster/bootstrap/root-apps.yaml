@@ -9,8 +9,10 @@ spec:
     repoURL: https://github.com/thetaskmaster42/homelab.git
     targetRevision: main
     path: cluster/infrastructure
+    # Top level only: subdirectories hold raw manifests owned by their own
+    # Application (e.g. metallb-config/), not by this root app.
     directory:
-      recurse: true
+      recurse: false
       include: '*.yaml'
   destination:
     server: https://kubernetes.default.svc
@@ -31,8 +33,10 @@ spec:
     repoURL: https://github.com/thetaskmaster42/homelab.git
     targetRevision: main
     path: cluster/apps
+    # Top level only: subdirectories hold raw manifests owned by their own
+    # Application (e.g. metallb-config/), not by this root app.
     directory:
-      recurse: true
+      recurse: false
       include: '*.yaml'
   destination:
     server: https://kubernetes.default.svc

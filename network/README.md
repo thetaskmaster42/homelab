@@ -12,6 +12,7 @@
 | `portal.rps-home.com` | TBD | Raspberry Pi | OpenMediaVault, NFS/NAS |
 | `server.rps-home.com` | TBD | HP desktop | Proxmox VE |
 | `k3s-master.rps-home.com` | TBD | Proxmox CT on `server` | k3s control plane |
+| `step-ca.rps-home.com` | TBD | Proxmox LXC on `server` | private CA (smallstep) — TODO confirm hostname |
 | `node-1.rps-home.com` | TBD | Raspberry Pi | k3s worker |
 | `node-2.rps-home.com` | TBD | Raspberry Pi | k3s worker |
 | `node-3.rps-home.com` | TBD | Raspberry Pi 5 | openclaw (dedicated, not in cluster) |

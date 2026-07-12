@@ -30,6 +30,7 @@ infra/            Machines and platform services (below Kubernetes)
   pihole/         DNS + DHCP
   proxmox/        Hypervisor, container/VM definitions
   nas/            portal — OpenMediaVault, NFS exports
+  step-ca/        Private certificate authority (LXC on Proxmox)
   k3s/            Cluster install/join scripts and node config
 cluster/          Everything running ON Kubernetes (GitOps source of truth)
   bootstrap/      ArgoCD install + root app-of-apps
@@ -43,7 +44,8 @@ archive/          Pre-v2 content kept for reference (not maintained)
 - [x] Document node inventory (hostnames; IPs/DHCP reservations still TBD)
 - [ ] Provision k3s: control-plane container on Proxmox, Pis + containers as workers
 - [ ] Bootstrap ArgoCD (`cluster/bootstrap/`)
-- [ ] Cluster addons: ingress, cert-manager, monitoring (storage: k3s built-in
-      `local-path` for now, NFS from portal later if needed)
+- [x] Cluster addons declared: MetalLB, cert-manager (ACME → step-ca),
+      kube-prometheus-stack (storage: k3s built-in `local-path` for now)
+- [ ] Fill addon TODOs: MetalLB address pool, step-ca hostname + root CA bundle
 - [ ] Migrate/redeploy applications (observability stack, data stack, …)
 - [ ] Join the Dell laptop as an additional worker

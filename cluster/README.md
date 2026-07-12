@@ -18,6 +18,11 @@ apps/             End-user applications — one ArgoCD Application per app
 3. Those directories contain ArgoCD `Application` manifests themselves, so
    adding a service = committing one YAML file. ArgoCD picks it up and deploys.
 
+Only the **top level** of `infrastructure/` and `apps/` is synced by the root
+apps. Subdirectories (e.g. `infrastructure/metallb-config/`) hold raw
+manifests deployed by their own companion Application — this keeps CRDs and
+the resources that depend on them in separately-retried syncs.
+
 ## Adding a service
 
 1. Create `cluster/apps/<name>.yaml` (or `infrastructure/<name>.yaml` for an

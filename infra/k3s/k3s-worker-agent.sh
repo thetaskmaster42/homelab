@@ -4,7 +4,7 @@ set -euo pipefail
 # Join this machine to the cluster as a worker. Run ON each worker node
 # (node-1, node-2, Proxmox CTs, later shield).
 #
-# Usage: K3S_TOKEN=<token> ./agent.sh [server-fqdn]
+# Usage: K3S_TOKEN=<token> ./k3s-worker-agent.sh [server-fqdn]
 #   token:       /var/lib/rancher/k3s/server/node-token on the server
 #   server-fqdn: defaults to k3s-master.rps-home.com
 
