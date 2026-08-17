@@ -1,51 +1,100 @@
 # Homelab
 
-Infrastructure-as-code for the `rps-home.com` homelab: network services, a k3s
-cluster, and the applications that run on it (GitOps via ArgoCD).
+Infrastructure-as-code for a three-node arm64 k3s cluster running on Raspberry
+Pis. Everything that runs on the cluster is declared in this repo and reconciled
+by ArgoCD.
+
+The cluster is deliberately disposable. Destroying and rebuilding it is a
+first-class, exercised operation — not a disaster recovery scenario.
+
+## The two planes
+
+The repo's top-level layout *is* the architecture:
+
+```
+clusters/    Node inventory — the config the CLI consumes
+cli/         The `homelab` CLI: bare Pis -> a running ArgoCD
+argocd/      The GitOps control plane: AppProjects + ApplicationSets
+infra/       Infrastructure services. Helm charts only.
+apps/        Homebuilt applications. Source lives in their own repos.
+docs/        Architecture, runbooks, decision records
+tests/       Static validation of everything above
+```
+
+**Infrastructure** is cluster plumbing — load balancing, ingress, certificates,
+networking, observability. Every infra service is a Helm chart, defined by two
+files, and is added or retired by editing config.
+
+**Applications** are homebuilt projects. Their code, Dockerfile and CI live in
+their own repositories; what lives here is the registration and the deployment
+overlay. That registration is what keeps the dashboard a complete picture even
+though the code is elsewhere.
+
+## The boundary
+
+```
+clusters/rps/cluster.yaml
+        │
+        ▼
+   homelab CLI ──SSH──► k3s + Calico + ArgoCD + bootstrap secrets
+        │
+        │  (the CLI's job ends here, permanently)
+        ▼
+     ArgoCD ──► infra/services/*  and  apps/*
+```
+
+The CLI owns only what must exist *before* the Kubernetes API is usable. It
+never installs a service and never applies an application manifest. Once ArgoCD
+is running, **git is the only input** — a push is a deploy.
+
+## Adding an infrastructure service
+
+Create a directory with two files and push:
+
+```
+infra/services/<name>/service.yaml    # chart repo, name, pinned version, namespace
+infra/services/<name>/values.yaml     # Helm values
+```
+
+An ApplicationSet notices the directory and generates an ArgoCD Application for
+it. Retiring the service is `git rm -r` on the directory — the Application is
+deleted and its resources are pruned. See
+[docs/adding-infra-service.md](docs/adding-infra-service.md).
+
+## Adding an application
+
+```
+apps/<name>/app.yaml            # name, namespace, source repo, exposure
+apps/<name>/kustomization.yaml  # remote base pinned to a sha, image pin, patches
+```
+
+See [docs/adding-application.md](docs/adding-application.md).
+
+## Bootstrap
+
+```sh
+uv run homelab init      # preflight: SSH, sudo, arch, disk, clock. Mutates nothing.
+uv run homelab install   # k3s server -> Calico -> agents join
+uv run homelab bootstrap # ArgoCD + bootstrap secrets + the root Application
+uv run homelab status    # node health + ArgoCD app sync state
+uv run homelab nuke --yes  # tear it all down
+```
+
+Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.md).
+
+## Conventions
+
+- **Chart versions are pinned.** No `targetRevision: '*'`. CI rejects it.
+- **Every image must have a `linux/arm64` manifest.** There is no amd64 node.
+  CI checks this against rendered manifests, so an amd64-only image fails a PR
+  rather than CrashLooping on a Pi.
+- **This repository is public.** Secrets are SOPS-encrypted with age; CI fails
+  on any plaintext secret.
+- Comment the *why* on non-default settings. The reason a flag is set is the
+  part that is expensive to rediscover.
 
 ## Hardware
 
-| Host | Device | Role |
-|------|--------|-------|
-| server.rps-home.com | HP desktop | Proxmox VE — hosts the k3s control-plane container + worker containers |
-| portal.rps-home.com | Raspberry Pi | OpenMediaVault — NFS / NAS |
-| pihole.rps-home.com | Raspberry Pi | Pi-hole — DNS + DHCP for the network |
-| node-3.rps-home.com | Raspberry Pi 5 | Dedicated to openclaw |
-| node-1.rps-home.com, node-2.rps-home.com | Raspberry Pi ×2 | k3s workers |
-| shield.rps-home.com | Dell laptop | Future k3s worker (currently out of network) |
-
-## Network
-
-- Domain: **rps-home.com**
-- DNS + DHCP: **Pi-hole** (all cluster hostnames get local DNS records here)
-- Shared storage: NFS exports from **portal** (OpenMediaVault)
-
-See [network/](network/README.md) for details.
-
-## Repository layout
-
-```
-network/          Network design, IP plan, DNS records
-infra/            Machines and platform services (below Kubernetes)
-  pihole/         DNS + DHCP
-  proxmox/        Hypervisor, container/VM definitions
-  nas/            portal — OpenMediaVault, NFS exports
-  step-ca/        Private certificate authority (LXC on Proxmox)
-  k3s/            Cluster install/join scripts and node config
-cluster/          Everything running ON Kubernetes (GitOps source of truth)
-  bootstrap/      ArgoCD install + root app-of-apps
-  infrastructure/ Cluster addons: ingress, storage, cert-manager, monitoring…
-  apps/           End-user applications
-archive/          Pre-v2 content kept for reference (not maintained)
-```
-
-## Roadmap
-
-- [x] Document node inventory (hostnames; IPs/DHCP reservations still TBD)
-- [ ] Provision k3s: control-plane container on Proxmox, Pis + containers as workers
-- [ ] Bootstrap ArgoCD (`cluster/bootstrap/`)
-- [x] Cluster addons declared: MetalLB, cert-manager (ACME → step-ca),
-      kube-prometheus-stack (storage: k3s built-in `local-path` for now)
-- [ ] Fill addon TODOs: MetalLB address pool, step-ca hostname + root CA bundle
-- [ ] Migrate/redeploy applications (observability stack, data stack, …)
-- [ ] Join the Dell laptop as an additional worker
+Three Pi 16 GB nodes on `192.168.11.0/24`, plus a NAS and a gateway Pi. See
+[docs/hardware.md](docs/hardware.md) — including the disk asymmetry that
+constrains where stateful workloads can run.

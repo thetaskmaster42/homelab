@@ -1,0 +1,16 @@
+# MetalLB replaces k3s servicelb (disabled via --disable=servicelb).
+#
+# strictARP is deliberately NOT set: it is a kube-proxy IPVS-mode requirement,
+# and k3s uses iptables mode. Do not add it cargo-cult.
+speaker:
+  # L2 mode announces via ARP on the LAN; no BGP peer exists here.
+  frr:
+    enabled: false
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+controller:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 128Mi }

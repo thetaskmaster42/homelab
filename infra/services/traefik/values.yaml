@@ -1,0 +1,37 @@
+service:
+  type: LoadBalancer
+  # Pinned so the LAN ingress address survives a nuke-and-rebuild and can be
+  # written into /etc/hosts or a future DNS record. Must be inside the MetalLB
+  # pool declared in infra/services/metallb/manifests/ipaddresspool.yaml.
+  spec:
+    loadBalancerIP: 192.168.11.240
+
+ports:
+  web:
+    # Everything on the LAN gets pushed to TLS; Tailscale-exposed services
+    # terminate at the tailnet instead and never traverse this entrypoint.
+    redirections:
+      entryPoint:
+        to: websecure
+        scheme: https
+        permanent: true
+  websecure:
+    tls:
+      enabled: true
+
+ingressRoute:
+  dashboard:
+    # The dashboard is reached over the tailnet, not published on the LAN.
+    enabled: false
+
+providers:
+  kubernetesCRD:
+    enabled: true
+  kubernetesIngress:
+    enabled: true
+    publishedService:
+      enabled: true
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 256Mi }

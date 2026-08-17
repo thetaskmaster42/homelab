@@ -1,0 +1,9 @@
+# Read by argocd/registry/appset-apps.yaml.
+#
+# The application's source, Dockerfile, tests and CI live in its own repo. What
+# lives here is the registration plus the deployment overlay — which is what
+# makes the dashboard a complete picture even though the code is elsewhere.
+name: prep-tracker
+namespace: interview
+sourceRepo: https://github.com/thetaskmaster42/prep-tracker
+exposure: tailnet

@@ -1,0 +1,30 @@
+# The single root Application. `homelab bootstrap` applies this once; everything
+# else in the cluster descends from it.
+#
+# It syncs ONLY argocd/registry/, which holds the AppProjects and the three
+# ApplicationSets. Those ApplicationSets then generate one Application per
+# directory under infra/services/ and apps/. This is why adding a service is a
+# single directory + push, with no change here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/thetaskmaster42/homelab.git
+    targetRevision: main
+    path: argocd/registry
+    directory:
+      recurse: false
+      include: '*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

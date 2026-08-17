@@ -1,0 +1,49 @@
+# Two AppProjects enforce the infra/app segregation at the RBAC layer, not just
+# by directory convention. An application can never accidentally install a
+# cluster-scoped CRD, and infra can never be sourced from a random repo.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: infra
+  namespace: argocd
+spec:
+  description: Cluster infrastructure. Helm charts only.
+  sourceRepos:
+    - https://github.com/thetaskmaster42/homelab.git
+    # Upstream chart repositories. Add one line per new chart source.
+    - https://metallb.github.io/metallb
+    - https://charts.jetstack.io
+    - https://traefik.github.io/charts
+    - https://pkgs.tailscale.com/helmcharts
+    - https://prometheus-community.github.io/helm-charts
+    - https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+    - https://helm.devtron.ai
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+  # Infra legitimately installs CRDs, ClusterRoles and namespaces.
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  description: Homebuilt applications. Source may live in external repos.
+  sourceRepos:
+    - 'https://github.com/thetaskmaster42/*'
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+  # Applications may NOT create cluster-scoped resources. If an app needs a CRD
+  # it is infrastructure, and belongs in infra/services/.
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

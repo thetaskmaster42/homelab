@@ -1,0 +1,53 @@
+# Generates one Application per directory under apps/.
+#
+# Applications are homebuilt projects whose SOURCE lives in its own repo. What
+# lives here is the overlay: the image pin, the exposure choice, and the
+# registration itself. That registration is what makes the dashboard a complete
+# picture even though the code is elsewhere.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/thetaskmaster42/homelab.git
+        revision: main
+        files:
+          - path: apps/*/app.yaml
+  template:
+    metadata:
+      name: '{{ .name }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      annotations:
+        # Surfaced in the ArgoCD and Devtron UIs so the origin of a running app
+        # is visible without grepping this repo.
+        homelab.rps/source-repo: '{{ .sourceRepo }}'
+        homelab.rps/exposure: '{{ .exposure }}'
+    spec:
+      project: apps
+      # Kustomize, not Helm: these are plain Deployments. The kustomization
+      # pulls the app repo's k8s/ dir as a remote base pinned to a tag, then
+      # patches in the image tag and exposure.
+      source:
+        repoURL: https://github.com/thetaskmaster42/homelab.git
+        targetRevision: main
+        path: apps/{{ .name }}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            maxDuration: 5m

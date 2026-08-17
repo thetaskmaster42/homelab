@@ -1,0 +1,23 @@
+# The OAuth client is NOT set here — it lives in the `operator-oauth` Secret,
+# applied at bootstrap from an encrypted file so no credential ever reaches this
+# public repo in plaintext.
+oauth:
+  clientId: ""
+  clientSecret: ""
+
+operatorConfig:
+  hostname: rps-k8s-operator
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+# Devices the operator creates are tagged so tailnet ACLs can reason about them.
+# Both tags must exist in the tailnet policy file before the operator starts, or
+# device registration fails with a permission error.
+proxyConfig:
+  defaultTags: "tag:k8s"
+
+apiServerProxyConfig:
+  # Exposes the Kubernetes API over the tailnet, so kubectl works off-LAN
+  # without a VPN or a port forward.
+  mode: "true"

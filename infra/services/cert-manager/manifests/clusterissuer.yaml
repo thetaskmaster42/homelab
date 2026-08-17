@@ -1,0 +1,40 @@
+# A two-step local CA chain, replacing the old step-ca LXC.
+#
+# selfsigned-root issues exactly one thing: the homelab root CA certificate.
+# homelab-ca then signs every leaf certificate for LAN services. Trusting one
+# root on your laptop makes every *.rps LAN service valid.
+#
+# Export the root to add it to a trust store:
+#   kubectl -n cert-manager get secret homelab-root-ca -o jsonpath='{.data.tls\.crt}' | base64 -d
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-root
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: homelab-root-ca
+  secretName: homelab-root-ca
+  duration: 87600h    # 10 years — this root is rotated by hand, deliberately
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-root
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca
+spec:
+  ca:
+    secretName: homelab-root-ca

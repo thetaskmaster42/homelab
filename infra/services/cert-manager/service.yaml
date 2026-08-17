@@ -1,0 +1,14 @@
+# cert-manager issues TLS certificates for LAN-internal services reached on the
+# MetalLB VIP.
+#
+# It does NOT issue certificates for anything exposed over Tailscale — Tailscale
+# provisions real Let's Encrypt certs for *.tailcb5a3f.ts.net itself. That is why
+# the old step-ca private CA was dropped (docs/decisions/0005-drop-step-ca.md);
+# the issuer here is a local selfsigned -> CA chain with no external dependency.
+name: cert-manager
+namespace: cert-manager
+extraManifests: "true"
+chart:
+  repo: https://charts.jetstack.io
+  name: cert-manager
+  version: "v1.21.1"

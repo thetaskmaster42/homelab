@@ -1,0 +1,53 @@
+# Companion Applications for infra services that ship raw custom resources
+# (MetalLB's IPAddressPool, cert-manager's ClusterIssuer, ...).
+#
+# These are split from the chart Application on purpose: a CR cannot be applied
+# until its CRD exists, and the CRD arrives with the chart. Rather than trying to
+# order two Applications — which sync waves cannot do across Applications — this
+# one simply retries forever until the CRD lands.
+#
+# Same generator as appset-infra, narrowed by a post-selector so only services
+# declaring `extraManifests: "true"` get a companion. (Post selectors are stable
+# in the ArgoCD version pinned in clusters/rps/cluster.yaml; if a downgrade ever
+# breaks this, the fallback is a git `directories` generator over
+# `infra/services/*/manifests` with the namespace moved into the manifests.)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infra-config
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/thetaskmaster42/homelab.git
+        revision: main
+        files:
+          - path: infra/services/*/service.yaml
+      selector:
+        matchLabels:
+          extraManifests: "true"
+  template:
+    metadata:
+      name: '{{ .name }}-config'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: infra
+      source:
+        repoURL: https://github.com/thetaskmaster42/homelab.git
+        targetRevision: main
+        path: infra/services/{{ .name }}/manifests
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            maxDuration: 5m
