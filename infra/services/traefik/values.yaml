@@ -1,23 +1,26 @@
 service:
-  type: LoadBalancer
-  # Pinned so the LAN ingress address survives a nuke-and-rebuild and can be
-  # written into /etc/hosts or a future DNS record. Must be inside the MetalLB
-  # pool declared in infra/services/metallb/manifests/ipaddresspool.yaml.
   spec:
+    type: LoadBalancer
+    # Pinned so the LAN ingress address survives a nuke-and-rebuild and can be
+    # written into /etc/hosts or a future DNS record. Must be inside the MetalLB
+    # pool declared in infra/services/metallb/manifests/ipaddresspool.yaml.
     loadBalancerIP: 192.168.11.240
 
 ports:
   web:
-    # Everything on the LAN gets pushed to TLS; Tailscale-exposed services
-    # terminate at the tailnet instead and never traverse this entrypoint.
-    redirections:
-      entryPoint:
-        to: websecure
-        scheme: https
-        permanent: true
+    http:
+      # Everything reaching Traefik on the LAN gets pushed to TLS. Services
+      # exposed over Tailscale terminate at the tailnet and never traverse this
+      # entrypoint at all.
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
   websecure:
-    tls:
-      enabled: true
+    http:
+      tls:
+        enabled: true
 
 ingressRoute:
   dashboard:
