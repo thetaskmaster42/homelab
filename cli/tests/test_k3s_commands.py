@@ -102,3 +102,34 @@ def test_kubeconfig_server_address_is_rewritten(cluster):
     # 127.0.0.1 is correct on the node and useless anywhere else.
     assert "https://192.168.11.7:6443" in out
     assert "127.0.0.1" not in out
+
+
+# --------------------------------------------------------------------------
+# ArgoCD install command
+# --------------------------------------------------------------------------
+
+def test_argocd_chart_is_referenced_by_bare_name(cluster, tmp_path):
+    """`repo/chart` is a local alias that only resolves after `helm repo add`.
+    Combined with --repo, helm searches for a chart literally named
+    "argo/argo-cd" and reports it missing — which reads like a bad version
+    rather than a malformed reference, and cost a real debugging round."""
+    from homelab.steps import argocd
+
+    values = tmp_path / "values.yaml"
+    values.write_text("{}\n")
+    argv = argocd.helm_install_argv(cluster, values)
+
+    chart = argv[argv.index("--install") + 2]
+    assert "/" not in chart, (
+        f"chart reference {chart!r} uses the repo-alias form; with --repo it must be bare"
+    )
+    assert chart == "argo-cd"
+
+
+def test_argocd_version_comes_from_cluster_config(cluster, tmp_path):
+    from homelab.steps import argocd
+
+    values = tmp_path / "values.yaml"
+    values.write_text("{}\n")
+    argv = argocd.helm_install_argv(cluster, values)
+    assert argv[argv.index("--version") + 1] == cluster.spec.argocd.chartVersion

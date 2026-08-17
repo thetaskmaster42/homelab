@@ -18,12 +18,17 @@ from ..errors import HomelabError
 from ..runner import Runner
 
 ARGO_REPO = "https://argoproj.github.io/argo-helm"
+# Bare chart name, NOT "argo/argo-cd". The `repo/chart` form is a local alias
+# that only resolves after `helm repo add`; combined with --repo, helm looks for
+# a chart literally named "argo/argo-cd" and reports it as not found — which
+# reads like a missing version rather than a malformed reference.
+ARGO_CHART = "argo-cd"
 NAMESPACE = "argocd"
 
 
 def helm_install_argv(cluster: Cluster, values_file: Path) -> list[str]:
     return [
-        "helm", "upgrade", "--install", "argocd", "argo/argo-cd",
+        "helm", "upgrade", "--install", "argocd", ARGO_CHART,
         "--repo", ARGO_REPO,
         "--version", cluster.spec.argocd.chartVersion,
         "--namespace", NAMESPACE,
