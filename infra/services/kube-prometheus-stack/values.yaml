@@ -7,6 +7,19 @@
 # being pinned to whichever node first scheduled them.
 
 grafana:
+  # Without this the chart generates a fresh random admin password on EVERY
+  # render. ArgoCD re-renders on every refresh, so under automated + selfHeal it
+  # would rewrite the Secret and restart Grafana continuously — the deployment
+  # annotation carries a checksum of the Secret, so the pod churns too.
+  # tests/test_render_determinism.py catches this class of bug.
+  #
+  # The referenced Secret is created at bootstrap, not by this chart; see
+  # docs/bootstrap.md. It must exist before this Application syncs.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
   # Reached over the tailnet, not a NodePort. The old 30000-30002 NodePorts are
   # retired — they were the only way in before Tailscale existed.
   service:

@@ -19,7 +19,7 @@ spec:
     - https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
     - https://openbao.github.io/openbao-helm
     - https://cloudnative-pg.github.io/charts
-    - https://helm.devtron.ai
+    - https://kubernetes-sigs.github.io/headlamp
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'

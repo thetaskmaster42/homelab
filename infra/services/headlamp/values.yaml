@@ -1,0 +1,38 @@
+replicaCount: 1
+
+config:
+  inCluster: true
+  inClusterContextName: rps
+  # Lets Headlamp list and inspect Helm releases, which is how the infra
+  # services deployed by ArgoCD show up as something other than loose pods.
+  enableHelm: true
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  # Tailnet only. Headlamp with the cluster-admin binding below is effectively
+  # root on the cluster through a browser — it must never be funneled to the
+  # public internet.
+  ingressClassName: tailscale
+  hosts:
+    - host: headlamp
+      paths:
+        - path: /
+          type: Prefix
+  tls:
+    - hosts:
+        - headlamp
+
+clusterRoleBinding:
+  create: true
+  # Read-write cluster-admin, because the point of this pane is to inspect and
+  # occasionally fix things. The access control that matters is the tailnet in
+  # front of it, not the ServiceAccount behind it. Narrow this to a read-only
+  # ClusterRole if the dashboard is ever reachable more widely.
+  clusterRoleName: cluster-admin
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { memory: 256Mi }

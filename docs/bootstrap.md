@@ -63,11 +63,18 @@ break-glass recovery when ArgoCD has broken its own ability to sync.
 
 ## 5. Bootstrap secrets
 
-Exactly three, decrypted with the local age key and applied directly:
+Decrypted with the local age key and applied directly:
 
 1. the age **private** key, so ArgoCD can decrypt everything else in the repo
 2. the Tailscale operator OAuth client
-3. a GHCR pull secret, only if a package ever goes private
+3. `grafana-admin` in the `monitoring` namespace (`admin-user`,
+   `admin-password`) — kube-prometheus-stack references it rather than
+   generating one, because a chart-generated password is regenerated on every
+   render and would restart Grafana on every sync
+4. a GHCR pull secret, only if a package ever goes private
+
+Each of these exists here rather than in OpenBao for the same reason: they are
+needed to bring the platform up, and OpenBao starts sealed.
 
 This is the root of the chain of trust: one key on your laptop unlocks a public
 repository full of encrypted values.
