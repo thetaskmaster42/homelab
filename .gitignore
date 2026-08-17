@@ -222,3 +222,4 @@ kubeconfig*
 *.dec.yaml
 # uv virtualenv for the CLI
 cli/.venv/
+.venv/
