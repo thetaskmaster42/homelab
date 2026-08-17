@@ -11,7 +11,7 @@ help:
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: validate
-validate: lint test-fast test-render ## Everything CI runs
+validate: lint test-fast test-cli test-render ## Everything CI runs
 
 .PHONY: lint
 lint: ## yamllint over the declarative tree
@@ -28,7 +28,11 @@ test-render: ## Helm/kustomize rendering + arm64 image verification (network)
 
 .PHONY: test-cli
 test-cli: ## Unit tests for the homelab CLI
-	@test -d cli && cd cli && uv run pytest -q || echo "cli/ not present yet"
+	cd cli && uv run --with pytest python -m pytest tests -q
+
+.PHONY: golden
+golden: ## Regenerate CLI golden files — review the diff, these pin the k3s flags
+	cd cli && UPDATE_GOLDEN=1 uv run --with pytest python -m pytest tests -q
 
 .PHONY: arm64
 arm64: ## Just the arm64 image check — run this before adopting a new chart

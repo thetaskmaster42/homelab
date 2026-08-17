@@ -220,3 +220,5 @@ kubeconfig*
 .homelab/
 # Decrypted SOPS output: *.enc.yaml is committed, its plaintext twin is not.
 *.dec.yaml
+# uv virtualenv for the CLI
+cli/.venv/

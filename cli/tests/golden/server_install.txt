@@ -1,0 +1,1 @@
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.36.3+k3s1 INSTALL_K3S_EXEC='server --flannel-backend=none --disable-network-policy --disable=servicelb --disable=traefik --write-kubeconfig-mode=644 --cluster-cidr=10.42.0.0/16 --service-cidr=10.43.0.0/16 --node-ip=192.168.11.7 --tls-san=192.168.11.7 --tls-san=k3s-server' sh -s -
