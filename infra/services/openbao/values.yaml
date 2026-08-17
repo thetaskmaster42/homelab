@@ -1,0 +1,43 @@
+server:
+  # Single node with file storage. HA raft across three Pis is the obvious next
+  # step, but it triples the unseal ceremony for a homelab with one operator —
+  # revisit once auto-unseal exists (see the note in service.yaml).
+  standalone:
+    enabled: true
+
+  dataStorage:
+    enabled: true
+    size: 2Gi
+    # Deliberately NOT nfs. The secret store is the last thing that should
+    # depend on the NAS being reachable, and OpenBao's storage backend wants
+    # local fsync semantics. It is small enough that node-pinning is acceptable
+    # here, and losing it is recoverable by re-initialising and re-seeding.
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+  # Reached over the tailnet via an Ingress, not published on the LAN.
+  service:
+    type: ClusterIP
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+
+injector:
+  # Mutates annotated pods to render secrets to a file in a shared volume, so
+  # applications consume secrets without an OpenBao client library:
+  #   bao.openbao.org/agent-inject: "true"
+  #   bao.openbao.org/role: "<role>"
+  enabled: true
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+csi:
+  # The injector covers the need; the CSI provider is a second mechanism doing
+  # the same job. Enable only if a workload cannot take an injected file.
+  enabled: false

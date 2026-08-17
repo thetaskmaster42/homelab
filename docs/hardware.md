@@ -18,22 +18,35 @@ The machine-readable version of this table is
 [`clusters/rps/cluster.yaml`](../clusters/rps/cluster.yaml). That file is the
 input to the CLI; this page is for humans. If they disagree, the YAML wins.
 
-### Resource asymmetry that matters
+### Storage
 
-RAM is uniform and generous (3 x 16 GB, typically under 15% used). **Disk is
-not:**
+RAM is uniform and generous (3 x 16 GB, typically under 15% used).
 
-| Node | Ephemeral storage |
-|---|---|
-| `k3s-server` | ~115 Gi |
-| `k3s-worker-1` | ~117 Gi |
-| `k3s-worker-2` | **~57 Gi** |
+Disk was previously lopsided — `k3s-worker-2` had ~57 Gi against ~115 Gi on the
+other two — which capped what could be scheduled there. A **256 GB card has been
+added to `k3s-worker-2`** to remove that asymmetry.
 
-The default `local-path` StorageClass pins a PersistentVolume to whichever node
-first scheduled its pod, and that pod can then never move. `prep-tracker`'s PVC
-is already bound to `k3s-worker-2`, the smallest node. Large PVCs landing there
-risk `DiskPressure` evictions, which is why Prometheus retention is capped at
-7d/10Gi and why an NFS provisioner is the fix rather than a nicety.
+> Not yet confirmed from the cluster: at the time of writing `k3s-worker-2` is
+> `NotReady` (kubelet stopped posting status), consistent with the node being
+> down for the card swap. Re-check with
+> `kubectl get nodes -o custom-columns='NAME:.metadata.name,DISK:.status.capacity.ephemeral-storage'`
+> once it rejoins, and update this table.
+
+**Capacity was only half the problem.** The default `local-path` StorageClass
+binds a PersistentVolume to whichever node first scheduled its pod, and that pod
+can then never move: it cannot be rescheduled when the node goes down, and
+`homelab nuke` erases the data outright. A bigger card raises the ceiling and
+changes none of that.
+
+So there are two StorageClasses, chosen deliberately per workload:
+
+| Class | Backed by | Use for |
+|---|---|---|
+| `local-path` (default) | node-local disk | workloads that replicate themselves (PostgreSQL), or where loss is acceptable |
+| `nfs` | `portal:/export/kubernetes-nfs-storage` | anything that must survive a rebuild or move between nodes |
+
+`nfs` uses `reclaimPolicy: Retain` precisely so that a cluster rebuild cannot
+destroy it.
 
 ## Other hosts
 
@@ -42,9 +55,15 @@ risk `DiskPressure` evictions, which is why Prometheus retention is capped at
 | `portal` | 192.168.11.3 | OpenMediaVault NAS — NFS (2049) and a web UI on 80 |
 | `Gateway` | 192.168.11.1 | Routes 192.168.11.0/24 to 192.168.0.0/24; DHCP for the lab |
 
-Neither is part of the cluster. `portal` is intended to back an NFS
-StorageClass so stateful workloads stop being node-pinned — that needs its
-export path, which is not yet recorded here.
+Neither is part of the cluster. `portal` exports
+**`/export/kubernetes-nfs-storage`**, which backs the `nfs` StorageClass via
+`infra/services/nfs-provisioner/`.
+
+Because `portal` is a single un-replicated NAS, it is a hard dependency for
+every workload on the `nfs` class. That is an accepted trade — it buys
+node-independence and rebuild-survival — but it means OpenBao and PostgreSQL
+deliberately stay on `local-path` so the secret store and the database do not
+go down with the NAS.
 
 The Gateway Pi is a single point of failure for the entire lab subnet and is not
 yet under configuration management.

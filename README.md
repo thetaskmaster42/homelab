@@ -88,8 +88,16 @@ Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.m
 - **Every image must have a `linux/arm64` manifest.** There is no amd64 node.
   CI checks this against rendered manifests, so an amd64-only image fails a PR
   rather than CrashLooping on a Pi.
-- **This repository is public.** Secrets are SOPS-encrypted with age; CI fails
-  on any plaintext secret.
+- **This repository is public.** Secrets come in two tiers: SOPS+age for the
+  bootstrap credentials that must live in git, OpenBao for what applications
+  read at runtime. CI fails on any plaintext secret. See
+  [ADR 0004](docs/decisions/0004-two-tier-secrets.md).
+- **Applications share one PostgreSQL**, run by the CloudNativePG operator in
+  the `databases` namespace — a database and role per app, not a database per
+  app.
+- **Two StorageClasses, chosen deliberately.** `nfs` for anything that must
+  survive a rebuild or move between nodes; `local-path` for workloads that
+  replicate themselves. See [docs/hardware.md](docs/hardware.md).
 - Comment the *why* on non-default settings. The reason a flag is set is the
   part that is expensive to rediscover.
 
