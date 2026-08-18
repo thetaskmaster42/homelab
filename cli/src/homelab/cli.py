@@ -19,7 +19,7 @@ from . import state as state_mod
 from .config import Cluster, Node
 from .errors import AuthError, HomelabError, Unreachable
 from .runner import LocalRunner, Runner, SSHRunner
-from .steps import argocd, cni, k3s, preflight
+from .steps import argocd, cni, k3s, preflight, prereqs
 
 DEFAULT_CLUSTER = "rps"
 
@@ -151,6 +151,17 @@ def cmd_install(args) -> int:
 
     server = cluster.server
     server_runner = ssh_to(cluster, server, dry_run=args.dry_run)
+
+    step("Node prerequisites")
+    for node in cluster.nodes:
+        runner = ssh_to(cluster, node, dry_run=args.dry_run)
+        try:
+            installed = prereqs.ensure(runner)
+            ok(f"{node.name:<14} {'installed ' + ', '.join(installed) if installed else 'ok'}")
+        except Unreachable:
+            warn(f"{node.name:<14} unreachable — will be handled when it joins")
+        except AuthError as exc:
+            bad(f"{node.name:<14} key rejected — {exc.detail}")
 
     step(f"Control plane: {server.name} ({server.ip})")
     if k3s.is_installed(server_runner) and not args.force:

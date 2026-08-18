@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from ..config import Cluster, Node
 from ..errors import AuthError, Unreachable
 from ..runner import Runner
+from . import prereqs
 
 EXPECTED_ARCH = "aarch64"
 MAX_CLOCK_SKEW_SECONDS = 5
@@ -89,6 +90,20 @@ def check_node(runner: Runner, node: Node, *, local_epoch: int | None = None) ->
         checks.append(
             Check("disk", free >= MIN_FREE_GB, f"{free}Gi free (need {MIN_FREE_GB}Gi)")
         )
+
+    # nfs-common provides /sbin/mount.nfs. Without it the nfs StorageClass
+    # cannot bind and pods hang in ContainerCreating with a bare "exit status 32",
+    # which gives no hint that a package is the cause.
+    missing = prereqs.missing_packages(runner)
+    checks.append(
+        Check(
+            "packages",
+            not missing,
+            f"missing {', '.join(missing)} — install runs apt-get for these"
+            if missing
+            else "nfs-common present",
+        )
+    )
 
     if local_epoch is not None:
         remote = runner.run(["date", "+%s"], check=False, timeout=20)
