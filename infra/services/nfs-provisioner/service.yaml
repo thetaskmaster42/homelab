@@ -1,0 +1,18 @@
+# Dynamic PersistentVolumes backed by the `portal` NAS.
+#
+# This exists to solve node-pinning, not capacity. The built-in `local-path`
+# StorageClass binds a volume to whichever node first scheduled its pod, and
+# that pod can then never move — it cannot be rescheduled if the node dies, and
+# `homelab nuke` destroys the data outright. Adding a bigger card to a node
+# raises its ceiling but changes none of that.
+#
+# Use `nfs` for anything that should survive a rebuild or move between nodes.
+# Keep `local-path` for workloads that manage their own replication (see
+# cloudnative-pg, which explicitly wants local disks).
+name: nfs-provisioner
+namespace: storage
+extraManifests: "false"
+chart:
+  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+  name: nfs-subdir-external-provisioner
+  version: "4.0.18"

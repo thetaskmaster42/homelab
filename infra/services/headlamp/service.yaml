@@ -1,0 +1,20 @@
+# Headlamp — the cluster resource browser, and the third pane of the "what is
+# running here" picture alongside the ArgoCD UI (sync state) and Grafana
+# (metrics).
+#
+# Chosen over Devtron after evaluating both. Devtron runs fine on arm64 — all
+# twelve of its images are multi-arch — but its chart renders
+# nondeterministically: a fresh Postgres password and four randomly-suffixed
+# Jobs on every render, none of them marked as Helm hooks. Under automated sync
+# that means ArgoCD re-runs database migration Jobs indefinitely. See
+# docs/decisions/0005-headlamp-over-devtron.md.
+#
+# Headlamp renders byte-identical across runs, so it needs no special-casing:
+# automated sync and selfHeal apply here exactly as they do everywhere else.
+name: headlamp
+namespace: headlamp
+extraManifests: "false"
+chart:
+  repo: https://kubernetes-sigs.github.io/headlamp
+  name: headlamp
+  version: "0.44.0"

@@ -1,9 +1,0 @@
-# ArgoCD Helm values (chart: argo/argo-cd)
-# Keep minimal for the homelab; tune resources once node inventory is known.
-
-configs:
-  params:
-    # TLS terminates at the ingress later; run the API server plain inside.
-    server.insecure: true
-
-# Mixed amd64/arm64 cluster — argo-cd images are multi-arch, no pinning needed.

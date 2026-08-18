@@ -205,3 +205,21 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- homelab ---
+# This repository is PUBLIC. Everything below is a credential or a local
+# artifact that must never be committed. CI re-checks these with gitleaks;
+# this list is the first line of defence, not the only one.
+*.agekey
+*.age
+age.key
+keys.txt
+kubeconfig
+kubeconfig*
+*.kubeconfig
+.homelab/
+# Decrypted SOPS output: *.enc.yaml is committed, its plaintext twin is not.
+*.dec.yaml
+# uv virtualenv for the CLI
+cli/.venv/
+.venv/

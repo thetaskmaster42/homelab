@@ -1,0 +1,13 @@
+# Traefik as a first-class, config-driven Helm service.
+#
+# k3s bundles its own Traefik via an in-cluster HelmChart CR, which is NOT
+# config-driven from this repo. The server is therefore installed with
+# --disable=traefik (see clusters/rps/cluster.yaml) so this Application owns it
+# outright. Running both would have two controllers fighting over one Deployment.
+name: traefik
+namespace: traefik
+extraManifests: "false"
+chart:
+  repo: https://traefik.github.io/charts
+  name: traefik
+  version: "41.2.0"

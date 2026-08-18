@@ -1,0 +1,14 @@
+# The base sets imagePullPolicy: Always to make `:latest` work. Now that the
+# image is pinned to a sha, Always is pure overhead — and worse, it makes the
+# pod unschedulable whenever GHCR is unreachable, even though the image is
+# already on the node.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prep-tracker
+spec:
+  template:
+    spec:
+      containers:
+        - name: prep-tracker
+          imagePullPolicy: IfNotPresent

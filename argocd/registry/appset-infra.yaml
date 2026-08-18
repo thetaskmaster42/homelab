@@ -1,0 +1,69 @@
+# Generates one Application per directory under infra/services/.
+#
+# THIS IS THE CONFIG-DRIVEN MECHANISM. Adding an infra service = create
+# infra/services/<name>/{service.yaml,values.yaml} and push. Retiring one =
+# `git rm -r` the directory and push. Nothing here changes either way.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infra
+  namespace: argocd
+spec:
+  goTemplate: true
+  # Fail loudly on a typo'd key instead of silently rendering an empty string.
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/thetaskmaster42/homelab.git
+        revision: main
+        files:
+          - path: infra/services/*/service.yaml
+  template:
+    metadata:
+      name: '{{ .name }}'
+      # Without this finalizer, deleting a service directory removes the
+      # Application but ORPHANS its workloads — a running service with no git
+      # representation. That would silently break the guarantee this whole
+      # mechanism exists to provide. Do not remove.
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: infra
+      # Multi-source: the chart comes from its upstream repo while its values
+      # file lives in this repo, reached through the `$values` ref. This is the
+      # only way "Helm charts are mandatory" and "config lives in git" can both
+      # be true at once.
+      sources:
+        - repoURL: '{{ .chart.repo }}'
+          chart: '{{ .chart.name }}'
+          targetRevision: '{{ .chart.version }}'
+          helm:
+            releaseName: '{{ .name }}'
+            valueFiles:
+              - $values/infra/services/{{ .name }}/values.yaml
+        - repoURL: https://github.com/thetaskmaster42/homelab.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # Applied to every infra service rather than made a per-service knob.
+          # Some charts (kube-prometheus-stack especially) ship CRDs that exceed
+          # the client-side apply annotation size limit, and server-side apply
+          # is the correct default for Helm-rendered resources anyway.
+          - ServerSideApply=true
+        # Ordering between services is NOT declared anywhere: sync waves only
+        # order resources within one Application, and these Applications have no
+        # parent sync to order them. Convergence is by retry instead, which is
+        # order-independent and survives a nuke-and-rebuild in any sequence.
+        retry:
+          limit: -1
+          backoff:
+            duration: 30s
+            maxDuration: 5m

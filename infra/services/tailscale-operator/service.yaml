@@ -1,0 +1,17 @@
+# Tailscale operator — the only path by which anything here is reachable off the
+# LAN.
+#
+# It provides ingressClass "tailscale". An Ingress using that class gets a
+# private tailnet hostname; adding the annotation
+# `tailscale.com/funnel: "true"` makes it genuinely public on the internet with
+# a real Let's Encrypt certificate.
+#
+# Requires an OAuth client from the tailnet admin console, stored encrypted in
+# secrets.enc.yaml. Until SOPS lands (M6) the CLI applies it at bootstrap.
+name: tailscale-operator
+namespace: tailscale
+extraManifests: "false"
+chart:
+  repo: https://pkgs.tailscale.com/helmcharts
+  name: tailscale-operator
+  version: "1.102.2"

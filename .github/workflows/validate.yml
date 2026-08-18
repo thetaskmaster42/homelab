@@ -1,0 +1,60 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Default to read-only; no job here needs to write to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: schema, pinning, secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Fast checks
+        run: uv run --with pytest --with pyyaml pytest tests -q -m "not network"
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs history to scan commits, not just the tree.
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  render:
+    name: helm render + arm64 images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: azure/setup-helm@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      # This is the job that matters most. The cluster is 100% arm64 while this
+      # runner is x86_64, so an amd64-only image would otherwise be discovered
+      # only when a pod CrashLoopBackOffs with `exec format error` on a Pi.
+      - name: Render charts and verify every image publishes linux/arm64
+        run: uv run --with pytest --with pyyaml pytest tests -q -m network
+
+  lint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install yamllint
+      - run: yamllint -c .yamllint.yaml argocd infra apps clusters

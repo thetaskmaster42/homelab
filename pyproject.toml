@@ -1,0 +1,29 @@
+# Repo root exists so `uv run homelab ...` works from here, which is what the
+# README and every runbook tell you to type. The CLI itself lives in cli/.
+[project]
+name = "homelab-repo"
+version = "0.1.0"
+description = "Homelab infrastructure-as-code: the homelab CLI plus its GitOps tree."
+requires-python = ">=3.11"
+dependencies = [
+    "homelab",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.uv.workspace]
+members = ["cli"]
+
+[tool.uv.sources]
+homelab = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Nothing to package at the root — this project exists only to hold the
+# workspace and the console script.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true

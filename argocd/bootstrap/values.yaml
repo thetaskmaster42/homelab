@@ -1,0 +1,38 @@
+# ArgoCD Helm values (chart: argo/argo-cd).
+# Applied twice: once by `homelab bootstrap` to install ArgoCD, and thereafter by
+# ArgoCD itself via argocd/registry/argocd-self.yaml. Keep those two in sync —
+# they read this same file.
+
+configs:
+  params:
+    # TLS terminates at Traefik (LAN) and at Tailscale (tailnet), so the API
+    # server runs plain inside the cluster.
+    server.insecure: true
+
+# 3x Raspberry Pi 16GB, all arm64. argo-cd images are multi-arch, no pinning
+# needed. Requests are set so the scheduler can reason about the Pis rather
+# than treating ArgoCD as free.
+controller:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+repoServer:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+applicationSet:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+redis:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }

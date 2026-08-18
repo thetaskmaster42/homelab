@@ -1,0 +1,26 @@
+# The LAN address pool MetalLB hands out to LoadBalancer Services.
+#
+# 192.168.11.0/24 is the lab subnet behind the Gateway Pi (192.168.11.1).
+# This range must sit OUTSIDE the Gateway's DHCP scope — verify before syncing:
+#   nmap -sn 192.168.11.200-250     # expect no replies
+# Traefik pins .240 (see infra/services/traefik/values.yaml) so the ingress IP
+# is stable across a nuke-and-rebuild.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: lan-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.11.200-192.168.11.250
+---
+# L2Advertisement makes the speaker answer ARP for the pool on the local
+# broadcast domain. Without this the pool exists but nothing is reachable.
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: lan-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - lan-pool

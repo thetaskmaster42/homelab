@@ -1,0 +1,12 @@
+# Read by argocd/registry/appset-infra.yaml. This file plus values.yaml is the
+# entire definition of "MetalLB is installed on this cluster".
+name: metallb
+namespace: metallb-system
+# manifests/ holds the IPAddressPool + L2Advertisement, which need the CRDs this
+# chart installs. Setting this to "true" makes appset-infra-config generate the
+# companion Application.
+extraManifests: "true"
+chart:
+  repo: https://metallb.github.io/metallb
+  name: metallb
+  version: "0.16.1"

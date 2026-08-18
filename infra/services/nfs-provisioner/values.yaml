@@ -1,0 +1,27 @@
+nfs:
+  # `portal` — Raspberry Pi running OpenMediaVault. Addressed by IP because the
+  # lab has no local DNS server; if one ever appears, this becomes a hostname.
+  server: 192.168.11.3
+  path: /export/kubernetes-nfs-storage
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    # Fail fast rather than hanging pods forever when the NAS is unreachable.
+    - timeo=600
+    - retrans=2
+
+storageClass:
+  name: nfs
+  # local-path stays the cluster default. Opting into NFS is deliberate, because
+  # NFS is the wrong choice for anything with strict fsync semantics.
+  defaultClass: false
+  # Retain, not Delete: this storage exists precisely so that data outlives the
+  # cluster. A rebuild must not be able to erase it.
+  reclaimPolicy: Retain
+  archiveOnDelete: true
+  accessModes: ReadWriteMany
+  allowVolumeExpansion: true
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 128Mi }

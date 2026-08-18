@@ -1,0 +1,7 @@
+name: kube-prometheus-stack
+namespace: monitoring
+extraManifests: "false"
+chart:
+  repo: https://prometheus-community.github.io/helm-charts
+  name: kube-prometheus-stack
+  version: "88.3.0"

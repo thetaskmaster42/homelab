@@ -1,0 +1,29 @@
+name: cli
+
+on:
+  push:
+    branches: [main]
+    paths: ["cli/**", "clusters/**", ".github/workflows/cli.yml"]
+  pull_request:
+    paths: ["cli/**", "clusters/**", ".github/workflows/cli.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # The suite validates against the real clusters/rps/cluster.yaml rather
+      # than a fixture, so a config change that breaks the CLI fails here — which
+      # is why clusters/** is in the path filter above.
+      - name: pytest
+        working-directory: cli
+        run: uv run --with pytest python -m pytest tests -q

@@ -1,0 +1,60 @@
+# The single source of truth for cluster topology.
+# Consumed by the `homelab` CLI (cli/). Nothing in-cluster reads this file —
+# once ArgoCD is running, git is the only input. See docs/architecture.md.
+apiVersion: homelab.rps/v1
+kind: Cluster
+metadata:
+  name: rps
+
+spec:
+  ssh:
+    user: rudra
+    identityFile: ~/.ssh/id_ed25519
+    # Connection multiplexing: 3 nodes x ~6 commands each. ControlMaster is the
+    # connection pool — there is deliberately no pooling code in the CLI.
+    controlPath: ~/.ssh/cm-%r@%h:%p
+
+  k3s:
+    version: v1.36.3+k3s1
+    clusterCIDR: 10.42.0.0/16
+    serviceCIDR: 10.43.0.0/16
+    # All five flags are load-bearing. See docs/decisions/0006-k3s-disables.md.
+    serverArgs:
+      - --flannel-backend=none      # Calico is the CNI
+      - --disable-network-policy    # Calico enforces policy instead
+      - --disable=servicelb         # MetalLB provides LoadBalancer IPs
+      - --disable=traefik           # Traefik is a GitOps-managed Helm chart
+      - --write-kubeconfig-mode=644
+
+  cni:
+    provider: calico
+    version: v3.29.1
+    encapsulation: VXLAN
+
+  argocd:
+    chartVersion: "10.4.0"
+    valuesFile: argocd/bootstrap/values.yaml
+    repoURL: https://github.com/thetaskmaster42/homelab.git
+    revision: main
+    rootApp: argocd/bootstrap/root.yaml
+
+  network:
+    # MetalLB pool. Must sit outside the Gateway Pi's DHCP scope — verify with
+    # `nmap -sn 192.168.11.200-250` before the first sync.
+    loadBalancerPool: 192.168.11.200-192.168.11.250
+    # Traefik pins this address so it is stable across rebuilds.
+    ingressIP: 192.168.11.240
+
+  nodes:
+    - name: k3s-server
+      ip: 192.168.11.7
+      role: server
+    - name: k3s-worker-1
+      ip: 192.168.11.6
+      role: agent
+    - name: k3s-worker-2
+      ip: 192.168.11.5
+      role: agent
+      # Only 57Gi ephemeral storage vs ~115Gi on the others. local-path PVs are
+      # node-pinned, so avoid scheduling large PVCs here until NFS is in place.
+      smallDisk: true
