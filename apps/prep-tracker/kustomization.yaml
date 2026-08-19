@@ -3,33 +3,75 @@ kind: Kustomization
 namespace: interview
 
 resources:
-  # The app repo owns its own manifests; this overlay only pins and exposes them.
-  # Every file is pinned to a commit sha, so a push to the app repo cannot
-  # silently change what runs here — bumping these refs IS the deploy, and it
-  # shows up as a reviewable diff.
+  # The app repo owns its own manifests; this overlay only pins, orders and
+  # exposes them. Every file is pinned to a commit sha, so a push to the app repo
+  # cannot silently change what runs here — bumping these refs IS the deploy.
   #
   # At this revision the app moved from SQLite to PostgreSQL, so the set of files
-  # changed as well as their contents: pvc.yaml is gone, and postgres-cluster.yaml
-  # and migrate-job.yaml are new. Bumping only the image tag would have run the
-  # new image against the old SQLite manifests, with no DATABASE_URL.
+  # changed as well as their contents: pvc.yaml is gone, postgres-cluster.yaml and
+  # migrate-job.yaml are new. Bumping only the image tag would have run the new
+  # image against the old manifests, with no DATABASE_URL.
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/deployment.yaml
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/service.yaml
-  # CloudNativePG Cluster "prep-tracker-db": the app runs its own database rather
-  # than using the shared cluster in the databases namespace.
+  # CloudNativePG Cluster "prep-tracker-db" — the app runs its own database
+  # rather than using the shared cluster in the databases namespace.
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/postgres-cluster.yaml
-  # `alembic upgrade head`, annotated as an ArgoCD PreSync hook so schema changes
-  # land before the new pods roll. RUN_MIGRATIONS_ON_STARTUP is false in the
-  # Deployment precisely so replicas cannot race each other on migration.
+  # `alembic upgrade head`. RUN_MIGRATIONS_ON_STARTUP is false in the Deployment
+  # precisely so the two replicas cannot race each other on migration.
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/migrate-job.yaml
   - ingress.yaml
 
 images:
   # The base ships `:latest` with imagePullPolicy: Always, which means you can
-  # neither roll back nor tell what is running. Pin the sha here instead. This
-  # applies to the migrate Job as well as the Deployment, so both run identical
-  # code — a migration from a different build than the app is a bad surprise.
+  # neither roll back nor tell what is running. Pin the sha instead. This applies
+  # to the migrate Job as well as the Deployment, so both run identical code — a
+  # migration from a different build than the app is a bad surprise.
   - name: ghcr.io/thetaskmaster42/prep-tracker
     newTag: "80a06c8"
 
 patches:
   - path: patches/deployment.yaml
+
+  # --- ordering ---------------------------------------------------------
+  # migrate-job.yaml ships as an ArgoCD PreSync hook, which deadlocks. PreSync
+  # runs BEFORE the main sync, but the Job needs secret `prep-tracker-db-app`,
+  # which the CloudNativePG operator creates only once the Cluster exists — and
+  # the Cluster is a main-sync resource. PreSync therefore waits forever for
+  # something PreSync itself prevents. Symptom: the Job pod sits in
+  # CreateContainerConfigError, secret "prep-tracker-db-app" not found.
+  #
+  # Moving the Job into the ordinary sync and ordering by wave gives what the
+  # hook was reaching for. Sync waves DO order resources within one Application
+  # (unlike across Applications, where they are inert):
+  #
+  #   wave 0  Cluster      default; the operator then publishes the secret
+  #   wave 1  migrate Job  schema
+  #   wave 2  Deployment   new pods
+  #
+  # The upstream fix is better: give the Cluster a lower sync-wave in the app
+  # repo, or let the Job tolerate a missing secret and retry.
+  - target:
+      kind: Job
+      name: prep-tracker-migrate
+    patch: |-
+      - op: remove
+        path: /metadata/annotations/argocd.argoproj.io~1hook
+      - op: remove
+        path: /metadata/annotations/argocd.argoproj.io~1hook-delete-policy
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "1"
+      # A Job spec is immutable, so a changed migration cannot be patched in
+      # place. Replace lets ArgoCD recreate it rather than fail the sync.
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-options
+        value: Replace=true
+
+  - target:
+      kind: Deployment
+      name: prep-tracker
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/sync-wave: "2"
