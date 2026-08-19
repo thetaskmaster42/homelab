@@ -1,0 +1,141 @@
+# Runbook: updating an application to a new build
+
+Promotion is a git change, never a `kubectl apply`. Bumping the pinned refs in
+`apps/<name>/kustomization.yaml` and merging to `main` *is* the deploy; ArgoCD
+does the rest. Applying by hand produces a resource ArgoCD immediately reverts,
+and leaves git describing something that is not running.
+
+Worked example: `prep-tracker` `40754fd` → `80a06c8`, the release that moved it
+from SQLite to PostgreSQL.
+
+---
+
+## 1. Check what actually changed upstream
+
+Do this first. It decides whether the update is a one-line edit or a restructure.
+
+```sh
+gh api repos/thetaskmaster42/prep-tracker/compare/<old-sha>...<new-sha> \
+  --jq '.files[]? | select(.filename|startswith("k8s/")) | "\(.status)  \(.filename)"'
+```
+
+Empty output means only the application code changed — bump the image tag and go.
+
+Any output means the deployment shape changed, and **bumping the image tag alone
+is wrong**: the new image would run against the old manifests. Here it printed:
+
+```
+modified  k8s/deployment.yaml
+added     k8s/migrate-job.yaml
+added     k8s/postgres-cluster.yaml
+removed   k8s/pvc.yaml
+```
+
+A removed `pvc.yaml` and an added database is a storage migration, not a release.
+
+## 2. Verify the image exists and is arm64
+
+Every node is arm64. An amd64-only image passes review and then
+`CrashLoopBackOff`s with `exec format error`.
+
+```sh
+docker manifest inspect ghcr.io/thetaskmaster42/prep-tracker:<tag> \
+  | grep -o '"architecture": "[a-z0-9]*"' | sort -u
+```
+
+`make arm64` checks this across everything, and CI blocks a PR that fails it.
+
+## 3. Back up anything about to be discarded
+
+If a PVC disappears from the manifests, ArgoCD prunes it and the data goes with
+it. Copy it out **before** merging — afterwards there is nothing to copy.
+
+```sh
+POD=$(kubectl -n interview get pod -l app=prep-tracker -o jsonpath='{.items[0].metadata.name}')
+mkdir -p ~/prep-tracker-backups
+kubectl -n interview cp "$POD:/data/prep_tracker.db" \
+  ~/prep-tracker-backups/prep_tracker-$(date +%Y%m%d-%H%M%S).db
+
+file ~/prep-tracker-backups/*.db          # confirm it is not a 0-byte artifact
+```
+
+A schema migration creates tables; it does not carry rows across from a
+different database engine. Assume the old data is gone unless you moved it.
+
+## 4. Update the overlay
+
+Pin **every** resource ref to the new sha, add what appeared, drop what was
+removed. Use the full 40-character sha in URLs — CI rejects a branch ref, because
+a branch means a push to the app repo silently changes what runs here.
+
+```sh
+gh api repos/<owner>/<repo>/commits/<short-sha> --jq '.sha'    # full sha
+```
+
+The `images:` entry keeps the short tag and applies to every container in the
+overlay, so the migration Job and the Deployment run identical code. A migration
+executed by a different build than the app is a bad surprise.
+
+## 5. Render and validate before pushing
+
+```sh
+kubectl kustomize apps/prep-tracker          # what will actually be applied
+make validate                                # schema, pinning, arm64, secrets, lint
+```
+
+Read the render, do not skim it. Confirm the image tag, replica count, and that
+nothing you expected has silently vanished.
+
+## 6. Merge — and let ArgoCD do the deploy
+
+```sh
+git add apps/prep-tracker/kustomization.yaml
+git commit -m "prep-tracker: <old> -> <new>"
+git push
+gh pr create --base main --head <branch> --title "..." --body "..."
+gh pr checks <n> --watch
+gh pr merge <n> --merge
+```
+
+ArgoCD polls `main`, so it picks the change up on its own. To avoid waiting, or
+when it is serving a cached render, force a refresh — this is still not a manual
+apply, it only tells ArgoCD to re-read git:
+
+```sh
+kubectl -n argocd annotate app prep-tracker argocd.argoproj.io/refresh=hard --overwrite
+```
+
+## 7. Verify against the new commit, not just "Synced"
+
+`Synced` alone does not mean synced to *your* commit — it may be Synced to the
+previous one. Check the revision:
+
+```sh
+kubectl -n argocd get app prep-tracker \
+  -o jsonpath='{.status.sync.status} {.status.health.status} {.status.sync.revision}{"\n"}'
+
+kubectl -n interview get pods -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}'
+curl -sS -o /dev/null -w "%{http_code}\n" https://prep-tracker.mongoose-galaxy.ts.net/
+```
+
+For **multi-source** Applications (every infra service) `.status.sync.revision`
+is empty by design; use `.status.sync.revisions` instead.
+
+If a PreSync hook Job is present, it must complete before the rollout begins:
+
+```sh
+kubectl -n interview get jobs
+kubectl -n interview logs job/prep-tracker-migrate
+```
+
+## 8. Rolling back
+
+Revert the commit. The old sha is still pinned in git history, the old image is
+still in the registry, and ArgoCD converges the same way it did forwards.
+
+```sh
+git revert <commit> && git push
+```
+
+Rolling back **code** is easy. Rolling back a **schema migration** is not — that
+needs a down-migration or a restore, which is why step 3 matters.

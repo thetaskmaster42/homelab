@@ -1,12 +1,23 @@
-# ArgoCD Helm values (chart: argo/argo-cd).
-# Applied twice: once by `homelab bootstrap` to install ArgoCD, and thereafter by
-# ArgoCD itself via argocd/registry/argocd-self.yaml. Keep those two in sync —
-# they read this same file.
+# ArgoCD Helm values (chart: argo-cd).
+#
+# Applied by `homelab bootstrap`, which runs `helm upgrade --install`. ArgoCD
+# does NOT manage itself — there is no Application for it — so a change here
+# takes effect only when bootstrap is re-run, not on push. That command is
+# idempotent and safe to repeat, which is also why it doubles as break-glass
+# recovery when ArgoCD has broken its own ability to sync.
+
+# Used for the redirect/callback URL ArgoCD advertises (argocd-cm `url`). Left
+# unset, ArgoCD emits links to localhost, which break as soon as anything
+# redirects — the same trap as Grafana's root_url.
+global:
+  domain: argocd.mongoose-galaxy.ts.net
 
 configs:
   params:
     # TLS terminates at Traefik (LAN) and at Tailscale (tailnet), so the API
-    # server runs plain inside the cluster.
+    # server runs plain inside the cluster. Required for the ingress below:
+    # without it argocd-server serves HTTPS itself and the proxy in front sees a
+    # TLS-on-TLS mismatch, which surfaces as a redirect loop.
     server.insecure: true
 
 # 3x Raspberry Pi 16GB, all arm64. argo-cd images are multi-arch, no pinning
@@ -23,6 +34,16 @@ repoServer:
     limits: { memory: 512Mi }
 
 server:
+  ingress:
+    enabled: true
+    # Tailnet only, and never funneled. ArgoCD has its own login, but it holds
+    # sync control over every service in the cluster — the tailnet is the
+    # boundary that matters.
+    ingressClassName: tailscale
+    # Short name: the Tailscale operator appends the tailnet suffix itself, the
+    # same way grafana and headlamp are configured.
+    hostname: argocd
+    tls: true
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { memory: 256Mi }
