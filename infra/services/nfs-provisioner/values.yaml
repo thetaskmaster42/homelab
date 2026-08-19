@@ -2,7 +2,14 @@ nfs:
   # `portal` — Raspberry Pi running OpenMediaVault. Addressed by IP because the
   # lab has no local DNS server; if one ever appears, this becomes a hostname.
   server: 192.168.11.3
-  path: /export/kubernetes-nfs-storage
+  # NFSv4 path, NOT the server-side filesystem path. OpenMediaVault exports
+  # /export with fsid=0, making it the v4 pseudo-root, so clients address shares
+  # relative to it: /kubernetes-nfs-storage, not /export/kubernetes-nfs-storage.
+  #
+  # `showmount -e` is actively misleading here — it speaks the v3 protocol and
+  # prints server-side paths, so it lists /export/kubernetes-nfs-storage while a
+  # v4 mount of that path fails with "No such file or directory".
+  path: /kubernetes-nfs-storage
   mountOptions:
     - nfsvers=4.1
     - hard

@@ -1,0 +1,17 @@
+# SOPS creation rules.
+#
+# Only the VALUES of secret-bearing keys are encrypted, never the keys or the
+# surrounding structure. That keeps `git diff` readable — you can see that a
+# Secret's namespace changed without decrypting anything — while the payload
+# stays opaque. This repository is public, so that payload is the only thing
+# standing between a credential and the internet.
+#
+# The age recipient below is a PUBLIC key. It is safe to commit; it can encrypt
+# but not decrypt. The matching private key lives on your laptop at
+# ~/.config/sops/age/keys.txt and in the cluster as a Secret the CLI installs at
+# bootstrap. It is the one thing that can never be in this repo.
+creation_rules:
+  - path_regex: \.enc\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    age: >-
+      REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
