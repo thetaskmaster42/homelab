@@ -3,25 +3,33 @@ kind: Kustomization
 namespace: interview
 
 resources:
-  # The app repo owns its own Deployment/Service/PVC; this overlay only pins and
-  # exposes them. Each file is pinned to a commit sha, so a push to the app repo
-  # cannot silently change what runs here — bumping these refs is the promotion
-  # event, and it shows up as a reviewable diff.
+  # The app repo owns its own manifests; this overlay only pins and exposes them.
+  # Every file is pinned to a commit sha, so a push to the app repo cannot
+  # silently change what runs here — bumping these refs IS the deploy, and it
+  # shows up as a reviewable diff.
   #
-  # These are per-file URLs rather than a `//k8s?ref=` directory base because the
-  # app repo's k8s/ has no kustomization.yaml. Adding one upstream would let this
-  # collapse to a single line; until then, per-file is the way that works without
-  # reaching into another repo.
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/40754fd335ae667b4a60d7b4db41d6e4ce72cac3/k8s/deployment.yaml
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/40754fd335ae667b4a60d7b4db41d6e4ce72cac3/k8s/service.yaml
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/40754fd335ae667b4a60d7b4db41d6e4ce72cac3/k8s/pvc.yaml
+  # At this revision the app moved from SQLite to PostgreSQL, so the set of files
+  # changed as well as their contents: pvc.yaml is gone, and postgres-cluster.yaml
+  # and migrate-job.yaml are new. Bumping only the image tag would have run the
+  # new image against the old SQLite manifests, with no DATABASE_URL.
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/deployment.yaml
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/service.yaml
+  # CloudNativePG Cluster "prep-tracker-db": the app runs its own database rather
+  # than using the shared cluster in the databases namespace.
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/postgres-cluster.yaml
+  # `alembic upgrade head`, annotated as an ArgoCD PreSync hook so schema changes
+  # land before the new pods roll. RUN_MIGRATIONS_ON_STARTUP is false in the
+  # Deployment precisely so replicas cannot race each other on migration.
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/migrate-job.yaml
   - ingress.yaml
 
 images:
   # The base ships `:latest` with imagePullPolicy: Always, which means you can
-  # neither roll back nor tell what is running. Pin the sha here instead.
+  # neither roll back nor tell what is running. Pin the sha here instead. This
+  # applies to the migrate Job as well as the Deployment, so both run identical
+  # code — a migration from a different build than the app is a bad surprise.
   - name: ghcr.io/thetaskmaster42/prep-tracker
-    newTag: "40754fd"
+    newTag: "80a06c8"
 
 patches:
   - path: patches/deployment.yaml
