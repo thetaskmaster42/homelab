@@ -1,5 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
+# -o pipefail: a piped pytest must not report success because `tail` succeeded.
+.SHELLFLAGS := -eu -o pipefail -c
 
 # Fast checks run everywhere. The arm64 and helm-render checks need network and
 # are marked `network` so they can be skipped offline but never in CI.

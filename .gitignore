@@ -223,3 +223,9 @@ kubeconfig*
 # uv virtualenv for the CLI
 cli/.venv/
 .venv/
+
+# Encrypted bootstrap secrets are intentionally NOT committed for now: a failed
+# `sops --encrypt >` redirect leaves an EMPTY file at this path, which then gets
+# staged by `git add -A` and looks like a legitimate encrypted file at a glance.
+# Remove this line once you have a genuinely encrypted file you want in git.
+clusters/*/bootstrap-secrets.enc.yaml
