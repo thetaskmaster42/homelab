@@ -24,6 +24,27 @@ grafana:
   # retired — they were the only way in before Tailscale existed.
   service:
     type: ClusterIP
+
+  ingress:
+    enabled: true
+    # Tailnet only. Grafana has real authentication of its own (the
+    # grafana-admin Secret), so this is defence in depth rather than the only
+    # control — unlike Headlamp, where the tailnet is the whole story. Still not
+    # funneled: dashboards leak a great deal about what runs here.
+    ingressClassName: tailscale
+    hosts:
+      - grafana
+    tls:
+      - hosts:
+          - grafana
+
+  # Grafana builds absolute URLs for redirects, share links and OAuth callbacks
+  # from root_url. Left at its default it emits http://localhost:3000 links,
+  # which break the moment anything redirects — most visibly on login.
+  grafana.ini:
+    server:
+      root_url: https://grafana.mongoose-galaxy.ts.net
+
   persistence:
     enabled: true
     storageClassName: local-path
