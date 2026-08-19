@@ -151,15 +151,23 @@ def test_example_files_contain_only_placeholders(relpath):
 
 
 def test_encrypted_files_are_actually_encrypted():
-    """A *.enc.yaml without a sops block is plaintext wearing the wrong name."""
+    """A *.enc.yaml without a sops block is plaintext wearing the wrong name.
+
+    Checked per document, not per file. A bundle of several Secrets is the normal
+    shape here, sops writes a `sops:` block into each one, and a file where only
+    some documents got encrypted is exactly the dangerous middle state — it would
+    look encrypted to anything that only inspected the first document.
+    """
     for relpath in tracked_yaml_files():
         if not relpath.endswith(".enc.yaml"):
             continue
-        doc = yaml.safe_load((REPO / relpath).read_text()) or {}
-        assert "sops" in doc, (
-            f"{relpath} has no sops metadata — it is not encrypted. "
-            f"Run: sops --encrypt --in-place {relpath}"
-        )
+        docs = [d for d in yaml.safe_load_all((REPO / relpath).read_text()) if d]
+        assert docs, f"{relpath} is empty — a failed `sops --encrypt >` leaves a 0-byte file"
+        for i, doc in enumerate(docs):
+            assert "sops" in doc, (
+                f"{relpath} document {i + 1} of {len(docs)} has no sops metadata — "
+                f"it is not encrypted."
+            )
 
 
 def test_gitignore_covers_key_material():

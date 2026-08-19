@@ -46,7 +46,7 @@ here is the deploy, and it shows up as a reviewable diff.
 ## Exposure
 
 `ingressClassName: tailscale` publishes the app on the tailnet at
-`https://<name>.tailcb5a3f.ts.net` with a real Let's Encrypt certificate,
+`https://<name>.mongoose-galaxy.ts.net` with a real Let's Encrypt certificate,
 reachable from your devices anywhere and from nobody else's.
 
 Adding `tailscale.com/funnel: "true"` makes it **genuinely public on the

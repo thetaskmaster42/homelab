@@ -1,6 +1,6 @@
 # Tailnet-only exposure. ingressClassName "tailscale" is provided by the
 # tailscale-operator infra service; it registers a node on the tailnet and
-# serves this app at https://prep-tracker.tailcb5a3f.ts.net with a real
+# serves this app at https://prep-tracker.mongoose-galaxy.ts.net with a real
 # Let's Encrypt certificate.
 #
 # This app is deliberately NOT funneled — it holds interview prep notes and has

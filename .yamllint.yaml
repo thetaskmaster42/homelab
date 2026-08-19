@@ -23,3 +23,6 @@ rules:
 
 ignore: |
   .github/
+  # sops controls the layout of encrypted files — indentation and the length of
+  # base64 payloads are its output format, not a style choice we get to make.
+  *.enc.yaml

@@ -44,16 +44,50 @@ Grafana's admin login and the Tailscale operator's OAuth client — the two
 credentials without which `kube-prometheus-stack` stays Degraded and
 `tailscale-operator` cannot register a device.
 
-```sh
-cp clusters/rps/bootstrap-secrets.example.yaml /tmp/bs.yaml
-$EDITOR /tmp/bs.yaml                                    # fill in real values
-sops --encrypt /tmp/bs.yaml > clusters/rps/bootstrap-secrets.enc.yaml
-shred -u /tmp/bs.yaml
-```
-
 **The encrypted file goes at `clusters/rps/bootstrap-secrets.enc.yaml`** — next
 to `cluster.yaml`, because it is per-cluster and consumed by the CLI, not by
 ArgoCD.
+
+> **The output path is what matters, not the input path.** SOPS matches its
+> creation rules against the file you hand it, and searches for `.sops.yaml`
+> upward from *that* file. Encrypting a scratch copy in `/tmp` therefore fails
+> with `error loading config: no matching creation rules found` — it never sees
+> this repo's config, and `/tmp/bs.yaml` would not match `\.enc\.yaml$` anyway.
+
+Use `--filename-override` so SOPS applies the rule for the destination while the
+plaintext stays outside the repo entirely:
+
+```sh
+cp clusters/rps/bootstrap-secrets.example.yaml /tmp/bs.yaml
+$EDITOR /tmp/bs.yaml                                     # fill in real values
+
+sops --encrypt \
+  --filename-override clusters/rps/bootstrap-secrets.enc.yaml \
+  /tmp/bs.yaml > clusters/rps/bootstrap-secrets.enc.yaml
+
+shred -u /tmp/bs.yaml
+```
+
+Or, if you would rather not remember that flag, edit at the destination and
+encrypt in place — simpler, at the cost of a moment where plaintext sits at a
+committable path:
+
+```sh
+cp clusters/rps/bootstrap-secrets.example.yaml clusters/rps/bootstrap-secrets.enc.yaml
+$EDITOR clusters/rps/bootstrap-secrets.enc.yaml
+sops --encrypt --in-place clusters/rps/bootstrap-secrets.enc.yaml
+```
+
+Do not commit between those last two commands. CI rejects a `*.enc.yaml` with no
+sops metadata, so the mistake is caught — but caught after a push is too late on
+a public repo.
+
+Verify either way:
+
+```sh
+grep -q '^sops:' clusters/rps/bootstrap-secrets.enc.yaml && echo encrypted
+sops --decrypt clusters/rps/bootstrap-secrets.enc.yaml | head
+```
 
 After that, never decrypt to disk again. Edit in place:
 

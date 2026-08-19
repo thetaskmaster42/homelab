@@ -101,8 +101,8 @@ kubectl kustomize apps/<name>       # render one app overlay
 kubectl -n argocd get applications  # what ArgoCD thinks is deployed
 ```
 
-Exposure is via Tailscale (tailnet `tailcb5a3f.ts.net`), not NodePorts or port
-forwarding. `ingressClassName: tailscale` gives a private tailnet host; the
+Exposure is via Tailscale (tailnet `mongoose-galaxy.ts.net`), not NodePorts or
+port forwarding. `ingressClassName: tailscale` gives a private tailnet host; the
 annotation `tailscale.com/funnel: "true"` makes it genuinely public — which for
 an app with no authentication is a decision, not a detail.
 

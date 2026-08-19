@@ -18,6 +18,16 @@ proxyConfig:
   defaultTags: "tag:k8s"
 
 apiServerProxyConfig:
-  # Exposes the Kubernetes API over the tailnet, so kubectl works off-LAN
-  # without a VPN or a port forward.
+  # Exposes the Kubernetes API over the tailnet, so kubectl works off-LAN with
+  # no VPN and no port forward.
   mode: "true"
+  # Without this the proxy forwards every request using the OPERATOR's identity,
+  # so anyone who can reach it on the tailnet inherits the operator's
+  # permissions. With it, the proxy sets impersonation headers from the caller's
+  # Tailscale identity, and access is governed by a tailnet grant plus ordinary
+  # Kubernetes RBAC.
+  #
+  # Requires a grant in the tailnet policy mapping users to Kubernetes groups —
+  # see docs/tailscale.md. Without that grant nobody can reach the API at all,
+  # which is the correct failure direction.
+  allowImpersonation: "true"

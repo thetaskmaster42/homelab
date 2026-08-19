@@ -2,8 +2,8 @@
 # MetalLB VIP.
 #
 # It does NOT issue certificates for anything exposed over Tailscale — Tailscale
-# provisions real Let's Encrypt certs for *.tailcb5a3f.ts.net itself. That is why
-# the old step-ca private CA was dropped (docs/decisions/0005-drop-step-ca.md);
+# provisions real Let's Encrypt certs for *.mongoose-galaxy.ts.net itself. That
+# is why the old step-ca private CA was dropped (docs/decisions/0003-drop-step-ca.md);
 # the issuer here is a local selfsigned -> CA chain with no external dependency.
 name: cert-manager
 namespace: cert-manager

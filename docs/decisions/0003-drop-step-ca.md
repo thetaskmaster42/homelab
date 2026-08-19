@@ -15,7 +15,7 @@ had an empty `caBundle` and a hostname that never resolved.
 Do not rebuild it.
 
 **External exposure** is via Tailscale, which provisions real Let's Encrypt
-certificates for `*.tailcb5a3f.ts.net` on both tailnet-internal and Funnel
+certificates for `*.mongoose-galaxy.ts.net` on both tailnet-internal and Funnel
 hostnames. That removes the entire reason a private CA existed: browsers and
 phones trust these certificates with no trust-store changes on any device.
 

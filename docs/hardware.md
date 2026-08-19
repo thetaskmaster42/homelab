@@ -86,7 +86,7 @@ yet under configuration management.
 - MetalLB pool: `192.168.11.200-192.168.11.250` — must stay outside the
   Gateway's DHCP scope
 - Traefik ingress VIP: `192.168.11.240`, pinned so it survives a rebuild
-- Tailnet: `tailcb5a3f.ts.net` — how anything is reached from outside the LAN
+- Tailnet: `mongoose-galaxy.ts.net` — how anything is reached from outside the LAN
 
 There is no local DNS server. Hosts are addressed by IP on the LAN and by
 MagicDNS name on the tailnet.
