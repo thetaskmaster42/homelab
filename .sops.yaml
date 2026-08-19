@@ -14,4 +14,4 @@ creation_rules:
   - path_regex: \.enc\.yaml$
     encrypted_regex: '^(data|stringData)$'
     age: >-
-      REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+      age1zfjcwgz8ktj6yzq8x2j9atygvm65wvr24f5d3zlqwtykr5nduqtsuau7an
