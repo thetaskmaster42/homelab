@@ -27,10 +27,24 @@ SECRETISH_FILENAME = re.compile(r"(secret|credential|token|password)", re.IGNORE
 
 
 def tracked_yaml_files() -> list[str]:
+    """Tracked files PLUS untracked-but-not-ignored ones.
+
+    Using `git ls-files` alone made results depend on whether a file happened to
+    be staged: a new example file was invisible locally and then failed in CI.
+    Including untracked files catches a mistake before it is even added, and
+    makes local runs match CI.
+    """
     out = subprocess.run(
-        ["git", "ls-files", "*.yaml", "*.yml"], cwd=REPO, capture_output=True, text=True
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.yaml", "*.yml"],
+        cwd=REPO, capture_output=True, text=True,
     )
-    return [line for line in out.stdout.splitlines() if line]
+    return sorted({line for line in out.stdout.splitlines() if line})
+
+
+def is_example(relpath: str) -> bool:
+    """Templates are exempt from the literal-value rules and held to a stricter
+    one instead: they must contain ONLY placeholders."""
+    return relpath.endswith(".example.yaml")
 
 
 @pytest.mark.parametrize("relpath", tracked_yaml_files())
@@ -40,6 +54,8 @@ def test_no_committed_secret_objects_with_data(relpath):
     path = REPO / relpath
     if relpath.endswith(".enc.yaml"):
         pytest.skip("encrypted file")
+    if is_example(relpath):
+        pytest.skip("template — covered by test_example_files_contain_only_placeholders")
 
     try:
         docs = list(yaml.safe_load_all(path.read_text()))
@@ -64,6 +80,8 @@ def test_no_populated_sensitive_keys(relpath):
     path = REPO / relpath
     if relpath.endswith(".enc.yaml"):
         pytest.skip("encrypted file")
+    if is_example(relpath):
+        pytest.skip("template — covered by test_example_files_contain_only_placeholders")
 
     findings: list[str] = []
 
@@ -112,7 +130,7 @@ PLACEHOLDER_MARKERS = ("CHANGE_ME", "REPLACE_", "EXAMPLE", "changeme", "<", "adm
 
 
 @pytest.mark.parametrize(
-    "relpath", [f for f in tracked_yaml_files() if f.endswith(".example.yaml")]
+    "relpath", [f for f in tracked_yaml_files() if is_example(f)]
 )
 def test_example_files_contain_only_placeholders(relpath):
     """An example that someone filled in and committed is the exact accident
