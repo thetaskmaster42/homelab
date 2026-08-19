@@ -98,3 +98,52 @@ internet**. Before setting it, be explicit about what authentication the app has
 Funnel additionally requires HTTPS and MagicDNS enabled in the tailnet, and a
 Funnel-permitting node attribute in the policy file. All three are one-time
 settings that are easy to forget.
+
+## Troubleshooting
+
+### `requested tags [tag:k8s] are invalid or not permitted (400)`
+
+The operator authenticated fine — it is failing to *mint an auth key* for the
+proxy device it wants to create. Its own identity is `tag:k8s-operator`, and
+minting a key tagged `tag:k8s` requires `tag:k8s-operator` to **own** `tag:k8s`.
+
+Almost always a missing ownership line in the tailnet policy file. Both entries
+are required, and the second is the one people leave out:
+
+```json
+"tagOwners": {
+  "tag:k8s-operator": [],
+  "tag:k8s": ["tag:k8s-operator"]
+}
+```
+
+If that is already present, check the OAuth client itself at
+<https://login.tailscale.com/admin/settings/oauth>: each write scope has a Tags
+field, and it must name `tag:k8s-operator`. A client with correct scopes but the
+wrong tag — or no tag — produces this same 400.
+
+Nothing needs restarting. The ingress-reconciler retries every few minutes, so
+Ingresses pick up an address on their own once the policy is right:
+
+```sh
+kubectl -n tailscale logs deploy/operator --tail=20
+kubectl get ingress -A          # ADDRESS populates when it works
+```
+
+### An Ingress has no ADDRESS
+
+Expected while the above is failing. Also expected if you are looking for a
+MetalLB IP: an Ingress with `ingressClassName: tailscale` never gets one. It is
+served by a Tailscale proxy device and reached at a `*.ts.net` name. Only
+Traefik holds the MetalLB VIP.
+
+### `dial tcp: lookup controlplane.tailscale.com: i/o timeout`
+
+Cluster DNS, not Tailscale. A few of these right after CoreDNS starts are
+normal and self-correct. Persistent ones are worth chasing:
+
+```sh
+kubectl -n kube-system get pods -l k8s-app=kube-dns
+kubectl -n default run dnscheck --image=busybox:1.36 --restart=Never --rm -i \
+  --command -- nslookup controlplane.tailscale.com
+```
