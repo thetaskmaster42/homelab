@@ -23,14 +23,16 @@ input to the CLI; this page is for humans. If they disagree, the YAML wins.
 RAM is uniform and generous (3 x 16 GB, typically under 15% used).
 
 Disk was previously lopsided — `k3s-worker-2` had ~57 Gi against ~115 Gi on the
-other two — which capped what could be scheduled there. A **256 GB card has been
-added to `k3s-worker-2`** to remove that asymmetry.
+other two. A 256 GB card has since been fitted, and the cluster confirms it:
 
-> Not yet confirmed from the cluster: at the time of writing `k3s-worker-2` is
-> `NotReady` (kubelet stopped posting status), consistent with the node being
-> down for the card swap. Re-check with
-> `kubectl get nodes -o custom-columns='NAME:.metadata.name,DISK:.status.capacity.ephemeral-storage'`
-> once it rejoins, and update this table.
+| Node | Free |
+|---|---|
+| `k3s-server` | ~104 Gi |
+| `k3s-worker-1` | ~108 Gi |
+| `k3s-worker-2` | **~222 Gi** |
+
+`k3s-worker-2` is now the *largest* node, which inverts the old constraint —
+prefer it for anything storage-hungry rather than avoiding it.
 
 **Capacity was only half the problem.** The default `local-path` StorageClass
 binds a PersistentVolume to whichever node first scheduled its pod, and that pod
@@ -55,9 +57,19 @@ destroy it.
 | `portal` | 192.168.11.3 | OpenMediaVault NAS — NFS (2049) and a web UI on 80 |
 | `Gateway` | 192.168.11.1 | Routes 192.168.11.0/24 to 192.168.0.0/24; DHCP for the lab |
 
-Neither is part of the cluster. `portal` exports
-**`/export/kubernetes-nfs-storage`**, which backs the `nfs` StorageClass via
-`infra/services/nfs-provisioner/`.
+Neither is part of the cluster. `portal` exports **`/export/kubernetes-nfs-storage`**, which backs the `nfs`
+StorageClass via `infra/services/nfs-provisioner/`.
+
+> **The export ACL currently allows `192.168.0.0/24` only**, which is the house
+> network — not `192.168.11.0/24`, where the cluster lives. Mounts therefore fail
+> with `access denied by server`. Fix it in the OpenMediaVault UI
+> (Services → NFS → Shares); OMV regenerates `/etc/exports` from its own
+> database, so editing that file by hand is overwritten on the next save.
+
+Nodes also need the `nfs-common` package for `/sbin/mount.nfs` to exist. That is
+installed by `homelab install`, not by hand — without it a pod hangs in
+`ContainerCreating` reporting only `exit status 32`, which says nothing about the
+real cause.
 
 Because `portal` is a single un-replicated NAS, it is a hard dependency for
 every workload on the `nfs` class. That is an accepted trade — it buys

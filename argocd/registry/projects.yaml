@@ -43,9 +43,14 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'
-  # Applications may NOT create cluster-scoped resources. If an app needs a CRD
-  # it is infrastructure, and belongs in infra/services/.
-  clusterResourceWhitelist: []
+  # Applications may not install CRDs, ClusterRoles or anything else
+  # cluster-scoped — if an app needs one it is infrastructure, and belongs in
+  # infra/services/. Namespace is the single exception: appset-apps sets
+  # CreateNamespace=true, and a Namespace is itself a cluster-scoped resource,
+  # so an empty whitelist blocks every app from ever being created.
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'

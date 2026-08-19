@@ -27,10 +27,24 @@ SECRETISH_FILENAME = re.compile(r"(secret|credential|token|password)", re.IGNORE
 
 
 def tracked_yaml_files() -> list[str]:
+    """Tracked files PLUS untracked-but-not-ignored ones.
+
+    Using `git ls-files` alone made results depend on whether a file happened to
+    be staged: a new example file was invisible locally and then failed in CI.
+    Including untracked files catches a mistake before it is even added, and
+    makes local runs match CI.
+    """
     out = subprocess.run(
-        ["git", "ls-files", "*.yaml", "*.yml"], cwd=REPO, capture_output=True, text=True
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.yaml", "*.yml"],
+        cwd=REPO, capture_output=True, text=True,
     )
-    return [line for line in out.stdout.splitlines() if line]
+    return sorted({line for line in out.stdout.splitlines() if line})
+
+
+def is_example(relpath: str) -> bool:
+    """Templates are exempt from the literal-value rules and held to a stricter
+    one instead: they must contain ONLY placeholders."""
+    return relpath.endswith(".example.yaml")
 
 
 @pytest.mark.parametrize("relpath", tracked_yaml_files())
@@ -40,6 +54,8 @@ def test_no_committed_secret_objects_with_data(relpath):
     path = REPO / relpath
     if relpath.endswith(".enc.yaml"):
         pytest.skip("encrypted file")
+    if is_example(relpath):
+        pytest.skip("template — covered by test_example_files_contain_only_placeholders")
 
     try:
         docs = list(yaml.safe_load_all(path.read_text()))
@@ -64,6 +80,8 @@ def test_no_populated_sensitive_keys(relpath):
     path = REPO / relpath
     if relpath.endswith(".enc.yaml"):
         pytest.skip("encrypted file")
+    if is_example(relpath):
+        pytest.skip("template — covered by test_example_files_contain_only_placeholders")
 
     findings: list[str] = []
 
@@ -88,17 +106,60 @@ def test_no_populated_sensitive_keys(relpath):
 
 
 def test_secretish_filenames_are_encrypted():
-    """Anything named like a secret must be an encrypted file, so that a future
-    `secrets.yaml` cannot quietly appear alongside `secrets.enc.yaml`."""
+    """Anything named like a secret must be encrypted, so a future `secrets.yaml`
+    cannot quietly appear next to `secrets.enc.yaml`.
+
+    `*.example.yaml` is exempt because a template with placeholders is exactly
+    how someone learns what to fill in — but it is then held to a stricter
+    standard by the test below.
+    """
     offenders = [
         f
         for f in tracked_yaml_files()
-        if SECRETISH_FILENAME.search(f.rsplit("/", 1)[-1]) and not f.endswith(".enc.yaml")
+        if SECRETISH_FILENAME.search(f.rsplit("/", 1)[-1])
+        and not f.endswith(".enc.yaml")
+        and not f.endswith(".example.yaml")
     ]
     assert not offenders, (
         f"files named like secrets but not encrypted: {offenders}. "
         f"Rename to *.enc.yaml and encrypt with sops."
     )
+
+
+PLACEHOLDER_MARKERS = ("CHANGE_ME", "REPLACE_", "EXAMPLE", "changeme", "<", "admin")
+
+
+@pytest.mark.parametrize(
+    "relpath", [f for f in tracked_yaml_files() if is_example(f)]
+)
+def test_example_files_contain_only_placeholders(relpath):
+    """An example that someone filled in and committed is the exact accident
+    this whole scheme exists to prevent, and it would look innocuous in review."""
+    path = REPO / relpath
+    findings = []
+    for doc in yaml.safe_load_all(path.read_text()):
+        if not isinstance(doc, dict) or doc.get("kind") != "Secret":
+            continue
+        payload = {**(doc.get("data") or {}), **(doc.get("stringData") or {})}
+        for key, value in payload.items():
+            text = str(value)
+            if not any(marker in text for marker in PLACEHOLDER_MARKERS):
+                findings.append(f"{key}={text!r}")
+    assert not findings, (
+        f"{relpath} looks like it holds real values, not placeholders: {findings}"
+    )
+
+
+def test_encrypted_files_are_actually_encrypted():
+    """A *.enc.yaml without a sops block is plaintext wearing the wrong name."""
+    for relpath in tracked_yaml_files():
+        if not relpath.endswith(".enc.yaml"):
+            continue
+        doc = yaml.safe_load((REPO / relpath).read_text()) or {}
+        assert "sops" in doc, (
+            f"{relpath} has no sops metadata — it is not encrypted. "
+            f"Run: sops --encrypt --in-place {relpath}"
+        )
 
 
 def test_gitignore_covers_key_material():

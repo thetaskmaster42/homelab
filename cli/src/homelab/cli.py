@@ -19,7 +19,7 @@ from . import state as state_mod
 from .config import Cluster, Node
 from .errors import AuthError, HomelabError, Unreachable
 from .runner import LocalRunner, Runner, SSHRunner
-from .steps import argocd, cni, k3s, preflight
+from .steps import argocd, cni, k3s, preflight, prereqs, secrets
 
 DEFAULT_CLUSTER = "rps"
 
@@ -151,6 +151,17 @@ def cmd_install(args) -> int:
 
     server = cluster.server
     server_runner = ssh_to(cluster, server, dry_run=args.dry_run)
+
+    step("Node prerequisites")
+    for node in cluster.nodes:
+        runner = ssh_to(cluster, node, dry_run=args.dry_run)
+        try:
+            installed = prereqs.ensure(runner)
+            ok(f"{node.name:<14} {'installed ' + ', '.join(installed) if installed else 'ok'}")
+        except Unreachable:
+            warn(f"{node.name:<14} unreachable — will be handled when it joins")
+        except AuthError as exc:
+            bad(f"{node.name:<14} key rejected — {exc.detail}")
 
     step(f"Control plane: {server.name} ({server.ip})")
     if k3s.is_installed(server_runner) and not args.force:
@@ -290,6 +301,8 @@ def cmd_bootstrap(args) -> int:
         state.argocdInstalled = True
         state_mod.save(root, state)
 
+    _apply_bootstrap_secrets(kubectl, cluster, root, args.dry_run)
+
     if not args.dry_run:
         step("Access")
         password = argocd.initial_password(kubectl)
@@ -298,11 +311,42 @@ def cmd_bootstrap(args) -> int:
             say("  (delete the argocd-initial-admin-secret once you have changed it)")
         say("  kubectl -n argocd port-forward svc/argocd-server 8080:443")
 
-    step("Still to do by hand")
-    warn("bootstrap secrets are not applied yet — see docs/bootstrap.md:")
-    warn("  age key, tailscale OAuth, grafana-admin")
-    warn("monitoring will not sync until grafana-admin exists")
     return 0
+
+
+def _apply_bootstrap_secrets(kubectl, cluster, root, dry_run: bool) -> None:
+    """The age key plus whatever clusters/<name>/bootstrap-secrets.enc.yaml holds.
+
+    Missing secrets are a warning, not an error: a cluster with no Tailscale and
+    no Grafana login is still a working cluster, and refusing to bootstrap
+    without them would make the chicken-and-egg worse rather than better.
+    """
+    step("Bootstrap secrets")
+    if dry_run:
+        ok("skipped (dry run)")
+        return
+
+    encrypted = secrets.bootstrap_file(root, cluster.name)
+
+    try:
+        secrets.install_age_key(kubectl)
+        ok(f"age key -> secret/{secrets.AGE_SECRET_NAME} in {secrets.AGE_SECRET_NAMESPACE}")
+    except HomelabError as exc:
+        warn(f"age key not installed: {exc}")
+        warn("ArgoCD cannot decrypt *.enc.yaml until it is")
+
+    if not encrypted.is_file():
+        warn(f"no {encrypted.relative_to(root)}")
+        warn(f"copy {secrets.example_file(root, cluster.name).name}, fill it in, and encrypt:")
+        warn(f"  sops --encrypt <plaintext> > {encrypted.relative_to(root)}")
+        warn("until then: monitoring stays Degraded, tailscale-operator cannot register")
+        return
+
+    try:
+        count = secrets.apply_bootstrap_secrets(kubectl, root, cluster.name)
+        ok(f"applied {count} secret(s) from {encrypted.relative_to(root)}")
+    except HomelabError as exc:
+        warn(f"could not apply bootstrap secrets: {exc}")
 
 
 # --------------------------------------------------------------------------
