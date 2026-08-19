@@ -107,8 +107,28 @@ The operator authenticated fine — it is failing to *mint an auth key* for the
 proxy device it wants to create. Its own identity is `tag:k8s-operator`, and
 minting a key tagged `tag:k8s` requires `tag:k8s-operator` to **own** `tag:k8s`.
 
-Almost always a missing ownership line in the tailnet policy file. Both entries
-are required, and the second is the one people leave out:
+**First, narrow it down.** Check whether the operator registered its own device:
+
+```sh
+tailscale status | grep k8s-operator
+```
+
+If it is listed and online, the OAuth client is fine and `tag:k8s-operator`
+works — the failure is only that the operator cannot *apply* `tag:k8s` to the
+proxy devices it creates. That is the ownership line, not the client.
+
+If no operator device appears at all, the problem is the OAuth client instead:
+its write scopes must each name `tag:k8s-operator`. OAuth clients cannot be
+edited after creation, so fixing that means generating a new one and re-running
+`homelab bootstrap` with the new values.
+
+Restarting the operator does **not** help either case — the permission is
+evaluated server-side on every API call, so there is no cached state to clear.
+
+Both entries below are required, and the second is the one people leave out.
+Note that `"tag:k8s": []` is **not** the same thing: an empty owner list means
+nothing may apply the tag, so the operator still gets a 400. It must name
+`tag:k8s-operator` explicitly:
 
 ```json
 "tagOwners": {
