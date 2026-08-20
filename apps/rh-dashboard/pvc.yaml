@@ -1,0 +1,19 @@
+# Statement archive. On the `nfs` class, not local-path, so the data survives a
+# node loss and a `homelab nuke` — the nfs StorageClass is reclaimPolicy: Retain
+# precisely so a cluster rebuild cannot erase it.
+#
+# ReadWriteOnce despite NFS supporting RWX: the app is a single writer by design.
+# Two pods would race on the input directory during an upload and on the output
+# file during a rebuild, which is also why the Deployment is one replica with a
+# Recreate strategy.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rh-dashboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 1Gi

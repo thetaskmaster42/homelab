@@ -1,0 +1,4 @@
+name: rh-dashboard
+namespace: rh-dashboard
+sourceRepo: https://github.com/thetaskmaster42/rh-dashboard
+exposure: tailnet

@@ -1,0 +1,100 @@
+# Mirrors chart/templates/deployment.yaml from the app repo. Written here rather
+# than sourcing the chart because rh-dashboard is PRIVATE and this repo is
+# PUBLIC: pointing ArgoCD at the chart would mean putting a git credential for a
+# private repo into the cluster, and vendoring the chart would copy private
+# content into a public repo. Neither is worth it for five manifests.
+#
+# The tradeoff is real: improvements to the upstream chart do not flow here.
+# If the chart starts changing often, revisit by giving ArgoCD a repo credential.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rh-dashboard
+  labels:
+    app: rh-dashboard
+spec:
+  # One replica, Recreate. The volume is ReadWriteOnce and the app is a single
+  # writer — a rolling update would briefly run two pods contending for it.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rh-dashboard
+  template:
+    metadata:
+      labels:
+        app: rh-dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Not optional. Without it the mounted volume is owned by root while the
+        # container runs as UID 1000, and every upload fails with EACCES — the
+        # app's own chart calls this out as its most common first-deploy failure.
+        fsGroup: 1000
+      containers:
+        - name: rh-dashboard
+          image: ghcr.io/thetaskmaster42/rh-dashboard:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "rh_dashboard.cli"]
+          args:
+            - serve
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8080"
+            - -i
+            - /data/input
+            - -o
+            - /data/output
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: RH_DASHBOARD_MAX_UPLOAD
+              value: "10485760"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 192Mi
+          volumeMounts:
+            # One claim mounted twice by subPath — two directories on one volume
+            # beats two claims to keep in sync.
+            - name: data
+              mountPath: /data/input
+              subPath: input
+            - name: data
+              mountPath: /data/output
+              subPath: output
+            # readOnlyRootFilesystem is on, and uploads are staged through a temp
+            # file before the parser sees them, so /tmp must be writable.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rh-dashboard
+        - name: tmp
+          emptyDir: {}
