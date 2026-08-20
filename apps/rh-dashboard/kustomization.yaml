@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: rh-dashboard
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pvc.yaml
+  - ingress.yaml
+
+images:
+  # Pinned, never `latest` — a floating tag makes rollback impossible and hides
+  # what is running.
+  #
+  # NOTE: this tag does not exist yet. rh-dashboard has no git tags, and its
+  # release.yml publishes only on `v*`, so nothing has ever been pushed to GHCR.
+  # Tag v0.1.0 in that repo to produce it; until then the pod is ImagePullBackOff.
+  - name: ghcr.io/thetaskmaster42/rh-dashboard
+    newTag: "0.1.0"

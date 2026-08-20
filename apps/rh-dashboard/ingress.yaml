@@ -1,0 +1,22 @@
+# Tailnet-only. ingressClassName "tailscale" gets a private tailnet hostname with
+# a real Let's Encrypt certificate: https://rh-dashboard.mongoose-galaxy.ts.net
+#
+# Must never be funneled. The page shows real brokerage account activity, and the
+# upload endpoint writes to the volume. The chart's own values say to turn on its
+# HTTP Basic auth for anything reachable beyond your own machine — that is not
+# enabled here, so right now the tailnet is the ONLY control. See the note in
+# docs/adding-application.md before widening access.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rh-dashboard
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: rh-dashboard
+      port:
+        number: 8080
+  tls:
+    - hosts:
+        - rh-dashboard
