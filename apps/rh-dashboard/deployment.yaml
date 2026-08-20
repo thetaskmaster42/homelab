@@ -36,7 +36,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: rh-dashboard
-          image: ghcr.io/thetaskmaster42/rh-dashboard:1.0.0
+          image: ghcr.io/thetaskmaster42/rh-dashboard:1.0.1
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -61,6 +61,24 @@ spec:
           env:
             - name: RH_DASHBOARD_MAX_UPLOAD
               value: "10485760"
+            # HTTP Basic auth. The server enables it only when BOTH vars are
+            # set, so these are all-or-nothing by design. Defence in depth
+            # behind the tailnet: this page shows real brokerage activity and
+            # its upload endpoint writes to the volume.
+            #
+            # The secret is created by `homelab bootstrap` from
+            # clusters/rps/bootstrap-secrets.enc.yaml, not by ArgoCD — a
+            # credential cannot sit in plaintext in a public repo.
+            - name: RH_DASHBOARD_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rh-dashboard-auth
+                  key: username
+            - name: RH_DASHBOARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rh-dashboard-auth
+                  key: password
           livenessProbe:
             httpGet:
               path: /healthz

@@ -12,9 +12,9 @@ images:
   # Pinned, never `latest` — a floating tag makes rollback impossible and hides
   # what is running.
   #
-  # NOTE: this tag does not exist yet. rh-dashboard has no git tags, and its
-  # release.yml publishes only on `v*`, so nothing has ever been pushed to GHCR.
-  # Tag v1.0.0 in that repo to produce it (matching chart appVersion 1.0.0);
-  # until then the pod stays in ImagePullBackOff.
+  # The IMAGE tag has no leading `v`, even though the git tag does:
+  # release.yml derives it with `${GITHUB_REF_NAME#v}`, so pushing git tag
+  # v1.0.1 publishes ghcr.io/.../rh-dashboard:1.0.1. Pinning "v1.0.1" here
+  # resolves to nothing and the pod sits in ImagePullBackOff.
   - name: ghcr.io/thetaskmaster42/rh-dashboard
-    newTag: "1.0.0"
+    newTag: "1.0.1"
