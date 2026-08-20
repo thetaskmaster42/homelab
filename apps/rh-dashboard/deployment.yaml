@@ -36,7 +36,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: rh-dashboard
-          image: ghcr.io/thetaskmaster42/rh-dashboard:0.1.0
+          image: ghcr.io/thetaskmaster42/rh-dashboard:1.0.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
