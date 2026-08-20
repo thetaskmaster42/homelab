@@ -14,6 +14,7 @@ images:
   #
   # NOTE: this tag does not exist yet. rh-dashboard has no git tags, and its
   # release.yml publishes only on `v*`, so nothing has ever been pushed to GHCR.
-  # Tag v0.1.0 in that repo to produce it; until then the pod is ImagePullBackOff.
+  # Tag v1.0.0 in that repo to produce it (matching chart appVersion 1.0.0);
+  # until then the pod stays in ImagePullBackOff.
   - name: ghcr.io/thetaskmaster42/rh-dashboard
-    newTag: "0.1.0"
+    newTag: "1.0.0"
