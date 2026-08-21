@@ -17,8 +17,9 @@ validate: lint test-fast test-cli test-render ## Everything CI runs
 
 .PHONY: lint
 lint: ## yamllint over the declarative tree
-	@command -v yamllint >/dev/null || { echo "yamllint not installed; skipping"; exit 0; }
-	yamllint -c .yamllint.yaml argocd infra apps clusters
+	@command -v yamllint >/dev/null \
+		&& yamllint -c .yamllint.yaml argocd infra apps clusters \
+		|| echo "yamllint not installed; skipping"
 
 .PHONY: test-fast
 test-fast: ## Schema, pinning and secret checks (no network)
