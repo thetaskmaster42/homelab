@@ -7,18 +7,21 @@ resources:
   # exposes them. Every file is pinned to a commit sha, so a push to the app repo
   # cannot silently change what runs here — bumping these refs IS the deploy.
   #
-  # At this revision the app moved from SQLite to PostgreSQL, so the set of files
-  # changed as well as their contents: pvc.yaml is gone, postgres-cluster.yaml and
-  # migrate-job.yaml are new. Bumping only the image tag would have run the new
-  # image against the old manifests, with no DATABASE_URL.
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/deployment.yaml
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/service.yaml
+  # These move together with the image tag even when k8s/ is untouched, so the
+  # overlay always describes one build rather than an image from one commit and
+  # manifests from another. At 45e502b the change is UI-only (a favicon), and
+  # `kubectl kustomize` renders byte-identically to 80a06c8 — verified, not
+  # assumed. The previous bump was the SQLite -> PostgreSQL move, where the set
+  # of files changed too, and bumping only the tag would have run the new image
+  # against manifests with no DATABASE_URL.
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/deployment.yaml
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/service.yaml
   # CloudNativePG Cluster "prep-tracker-db" — the app runs its own database
   # rather than using the shared cluster in the databases namespace.
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/postgres-cluster.yaml
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/postgres-cluster.yaml
   # `alembic upgrade head`. RUN_MIGRATIONS_ON_STARTUP is false in the Deployment
   # precisely so the two replicas cannot race each other on migration.
-  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/80a06c881d3bf712cbb57ee593a861b1ea86ec73/k8s/migrate-job.yaml
+  - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/migrate-job.yaml
   - ingress.yaml
 
 images:
@@ -27,7 +30,7 @@ images:
   # to the migrate Job as well as the Deployment, so both run identical code — a
   # migration from a different build than the app is a bad surprise.
   - name: ghcr.io/thetaskmaster42/prep-tracker
-    newTag: "80a06c8"
+    newTag: "45e502b"
 
 patches:
   - path: patches/deployment.yaml
