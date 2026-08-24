@@ -40,7 +40,7 @@ From `spec.instances: 2`:
 |---|---|
 | `postgres-1`, `postgres-2` | one primary, one streaming replica |
 | `postgres-rw`, `postgres-ro`, `postgres-r` | three Services (below) |
-| `postgres-1`, `postgres-2` PVCs | 10Gi each, `local-path` |
+| `postgres-1`, `postgres-2` PVCs | 10Gi each, `nfs` |
 | `postgres-app` | application credentials, `kubernetes.io/basic-auth` |
 | `postgres-ca`, `postgres-server`, `postgres-replication` | TLS for client and replication traffic |
 
@@ -54,20 +54,42 @@ postgres-2   k3s-worker-2   replica
 That separation is the entire point of the replica. On one node it would protect
 against a corrupt volume and nothing else.
 
-## Why local-path, not the nfs class
+## Why the nfs class, despite the case against it
 
-Counter-intuitive given the effort spent making NFS work, and deliberate.
+This cluster used to run on `local-path`, and the argument for that was sound:
 
-CloudNativePG gets durability from **streaming replication between nodes**, not
-from shared storage. Each instance owns a private local volume and the replica
-holds a continuously-updated copy. Losing a node means failing over to the
-replica, not moving a volume — so node-pinning, the thing NFS exists to solve,
-is not a problem here.
+> CloudNativePG gets durability from **streaming replication between nodes**,
+> not from shared storage. Each instance owns a private local volume and the
+> replica holds a continuously-updated copy. Losing a node means failing over to
+> the replica, not moving a volume — so node-pinning, the thing NFS exists to
+> solve, is not a problem here. PostgreSQL also depends on strict `fsync`
+> semantics, and that is exactly what NFS is worst at.
 
-PostgreSQL also depends on strict `fsync` semantics for durability, and that is
-exactly what NFS is worst at. Putting it on the NAS would trade a real guarantee
-for a convenience it does not need, and add the NAS as a hard dependency of the
-database.
+[ADR 0006](decisions/0006-nfs-default-storage.md) overrode it, cluster-wide:
+`local-path` no longer exists. Two consequences matter specifically here, and
+neither is hypothetical.
+
+**The replica no longer protects against storage loss.** Both instances write to
+`portal`. `enablePodAntiAffinity` still puts them on different nodes and still
+covers node failure, kernel panics and evictions — the common failures in this
+lab. It does not cover the NAS, which is now underneath both copies. Physical
+replication protects against losing a *server*, never against losing the storage
+both servers share.
+
+**`fsync` is now a trust assumption rather than a guarantee.** Postgres treats a
+completed `fsync` as durable. An NFS server that acknowledges before the write
+reaches disk breaks that across a power cut, and Postgres cannot detect it — the
+damage appears later as a corrupt page. The `hard` mount option covers the
+*outage* case cleanly (Postgres blocks, then resumes); it does nothing for a
+power cut on `portal` mid-write.
+
+### What this means in practice
+
+**Backups are now the only real protection, and they do not exist.** Under
+`local-path` the second instance was an independent copy on independent
+hardware; it is not any more. Until barman is configured against a target that
+is not `portal`, the honest recovery story for this cluster is *reinitialise
+empty*. Treat that as the top of the backlog, not a nice-to-have.
 
 ## The three Services
 
@@ -145,9 +167,11 @@ Nothing static is stored anywhere, and rotation stops being an event.
 [ADR 0004](decisions/0004-two-tier-secrets.md) names this as where the two-tier
 secret design is heading; it is the reason OpenBao is deployed at all.
 
-Until one of these is in place, the shared cluster is running and healthy but has
-no application consuming it — `prep-tracker` still uses SQLite on a local-path
-volume.
+Until one of these is in place, credentials stay as the operator-generated
+`postgres-app` Secret. Note that `prep-tracker` does not consume this shared
+cluster at all: it runs its own CloudNativePG `Cluster` in the `interview`
+namespace, which names no `storageClassName` and so inherits the `nfs` default
+like everything else.
 
 ## Operating it
 

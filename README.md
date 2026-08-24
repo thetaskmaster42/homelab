@@ -95,9 +95,11 @@ Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.m
 - **Applications share one PostgreSQL**, run by the CloudNativePG operator in
   the `databases` namespace — a database and role per app, not a database per
   app.
-- **Two StorageClasses, chosen deliberately.** `nfs` for anything that must
-  survive a rebuild or move between nodes; `local-path` for workloads that
-  replicate themselves. See [docs/hardware.md](docs/hardware.md).
+- **One StorageClass: `nfs`**, the default, backed by the `portal` NAS. k3s runs
+  with `--disable=local-storage`, so node-local `local-path` volumes no longer
+  exist. This trades PostgreSQL and Prometheus' preference for local `fsync`
+  against volumes that survive a rebuild and can move between nodes. See
+  [ADR 0006](docs/decisions/0006-nfs-default-storage.md).
 - Comment the *why* on non-default settings. The reason a flag is set is the
   part that is expensive to rediscover.
 

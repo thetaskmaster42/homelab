@@ -8,11 +8,20 @@ server:
   dataStorage:
     enabled: true
     size: 2Gi
-    # Deliberately NOT nfs. The secret store is the last thing that should
-    # depend on the NAS being reachable, and OpenBao's storage backend wants
-    # local fsync semantics. It is small enough that node-pinning is acceptable
-    # here, and losing it is recoverable by re-initialising and re-seeding.
-    storageClass: local-path
+    # nfs, because it is now the only StorageClass -- k3s runs with
+    # --disable=local-storage. This reverses the earlier choice here, and the
+    # earlier reasoning was not wrong: the secret store is the last thing that
+    # should depend on the NAS being reachable, and the file backend wants local
+    # fsync semantics. Under `hard` mounts a NAS outage does not corrupt the
+    # store, it blocks it -- OpenBao hangs rather than losing data, and the pod
+    # recovers when `portal` returns.
+    #
+    # What makes that acceptable is the recovery plan, which has not changed:
+    # this volume is reconstructible. Losing it costs a re-initialise and a
+    # re-seed, not lost secrets, because the seeds come from the SOPS-encrypted
+    # bootstrap bundle in git. Treat it as a cache of unsealed state, not as the
+    # system of record.
+    storageClass: nfs
     accessMode: ReadWriteOnce
 
   resources:

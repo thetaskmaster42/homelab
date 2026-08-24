@@ -34,21 +34,29 @@ other two. A 256 GB card has since been fitted, and the cluster confirms it:
 `k3s-worker-2` is now the *largest* node, which inverts the old constraint —
 prefer it for anything storage-hungry rather than avoiding it.
 
-**Capacity was only half the problem.** The default `local-path` StorageClass
-binds a PersistentVolume to whichever node first scheduled its pod, and that pod
-can then never move: it cannot be rescheduled when the node goes down, and
-`homelab nuke` erases the data outright. A bigger card raises the ceiling and
-changes none of that.
+**Capacity was only half the problem, and the smaller half.** The old default
+`local-path` StorageClass bound a PersistentVolume to whichever node first
+scheduled its pod, and that pod could then never move: it could not be
+rescheduled when the node went down, and `homelab nuke` erased the data
+outright. A bigger card raises the ceiling and changes none of that — which is
+why upgrading worker-2 solved the capacity complaint without solving the real
+one.
 
-So there are two StorageClasses, chosen deliberately per workload:
+So there is now exactly **one** StorageClass, and it is the default:
 
-| Class | Backed by | Use for |
+| Class | Backed by | Notes |
 |---|---|---|
-| `local-path` (default) | node-local disk | workloads that replicate themselves (PostgreSQL), or where loss is acceptable |
-| `nfs` | `portal:/export/kubernetes-nfs-storage` | anything that must survive a rebuild or move between nodes |
+| `nfs` (default, only) | `portal:/export/kubernetes-nfs-storage` | `reclaimPolicy: Retain`, RWX-capable, `hard` mounts |
 
-`nfs` uses `reclaimPolicy: Retain` precisely so that a cluster rebuild cannot
-destroy it.
+`local-path` is gone: k3s runs with `--disable=local-storage`. A PVC that names
+no `storageClassName` lands on `nfs`, which is what makes it the default for
+applications without any per-app configuration.
+
+`reclaimPolicy: Retain` exists precisely so that a cluster rebuild cannot
+destroy the data. The trade this makes — NFS under PostgreSQL, Prometheus and
+OpenBao, all of which would rather have local `fsync` — is argued in full in
+[ADR 0006](decisions/0006-nfs-default-storage.md). Read it before moving
+anything back.
 
 ## Other hosts
 
@@ -72,10 +80,23 @@ installed by `homelab install`, not by hand — without it a pod hangs in
 real cause.
 
 Because `portal` is a single un-replicated NAS, it is a hard dependency for
-every workload on the `nfs` class. That is an accepted trade — it buys
-node-independence and rebuild-survival — but it means OpenBao and PostgreSQL
-deliberately stay on `local-path` so the secret store and the database do not
-go down with the NAS.
+**every** stateful workload in the cluster — OpenBao and PostgreSQL included,
+which previously stayed on `local-path` for exactly this reason. That is the
+central cost of [ADR 0006](decisions/0006-nfs-default-storage.md), and it is
+accepted rather than solved: it buys node-independence and rebuild-survival, and
+it concentrates the blast radius of a NAS outage from one dashboard to all
+cluster state.
+
+The `hard` mount option means the failure mode is a hang, not corruption. Pods
+block in uninterruptible sleep until `portal` returns, then continue. So a NAS
+outage looks like a cluster-wide freeze of stateful services rather than data
+loss — annoying, recoverable, and worth recognising quickly. **If several
+unrelated stateful pods go unready at once, check `portal` before anything
+else.**
+
+`portal` is a 4GB Pi, and it is now the single most important machine in the lab
+after the control plane. It has no redundancy and no backup target of its own,
+which makes off-NAS backups the highest-value outstanding work here.
 
 The Gateway Pi is a single point of failure for the entire lab subnet and is not
 yet under configuration management.

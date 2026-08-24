@@ -46,12 +46,22 @@ A pod that is `Running` but `0/1 Ready` with `Sealed: true` is the normal sealed
 state, not a fault. Applications using the injector will show init containers
 stuck waiting for a secret — that is the downstream symptom.
 
-## Why it is on local-path, not NFS
+## Why it is on NFS, despite wanting local disk
 
-The secret store should not depend on the NAS being reachable, and OpenBao's
-storage backend wants local fsync semantics. It is small, and the recovery path
-if the node is lost is re-initialise and re-seed — which is why what OpenBao
-holds should be reproducible, not the only copy of anything.
+It used to be on `local-path`, for good reasons: the secret store should not
+depend on the NAS being reachable, and OpenBao's file backend wants local fsync
+semantics. [ADR 0006](../decisions/0006-nfs-default-storage.md) removed
+`local-path` from the cluster entirely, so `nfs` is now the only option.
+
+That is tolerable because of how it fails and how it recovers. The mount is
+`hard`, so a NAS outage *blocks* OpenBao rather than corrupting it — the pod
+hangs in uninterruptible sleep and comes back when `portal` does. And the
+recovery path has not changed: if the volume is lost, re-initialise and re-seed
+from the SOPS-encrypted bootstrap bundle. That still means what OpenBao holds
+must be reproducible, never the only copy of anything.
+
+The practical consequence: **`portal` being down now blocks the unseal itself.**
+Check the NAS before debugging a sealed OpenBao that will not start.
 
 ## Where this goes next
 

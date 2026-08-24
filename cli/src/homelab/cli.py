@@ -421,9 +421,13 @@ def cmd_nuke(args) -> int:
     for node in targets:
         say(f"  {node.name:<14} {node.ip}  ({node.role})")
 
-    # local-path PersistentVolumes live under /var/lib/rancher/k3s/storage and
-    # are erased with the rest of it. Naming them is the difference between an
-    # informed decision and an unpleasant surprise.
+    # Say what happens to persistent data, in both directions. Since nfs became
+    # the default and only StorageClass (docs/decisions/0006-nfs-default-storage.md)
+    # the expected answer is "nothing is lost" — but a nuke that says nothing at
+    # all about storage reads the same as one that has not checked. Report the
+    # survivors explicitly, and keep the local-path branch because a cluster
+    # built before that change, or one where the addon was re-enabled, still has
+    # volumes under /var/lib/rancher/k3s/storage that this erases.
     kubectl = kube(cluster)
     pvcs = kubectl.run(
         [
@@ -433,14 +437,21 @@ def cmd_nuke(args) -> int:
         ],
         check=False,
     )
-    doomed = [
-        line for line in pvcs.out.splitlines() if line.strip() and "local-path" in line
-    ]
+    claims = [line for line in pvcs.out.splitlines() if line.strip()]
+    doomed = [line for line in claims if "local-path" in line]
+    survivors = [line for line in claims if "nfs" in line]
     if doomed:
         say("\n  PersistentVolumeClaims on local-path — these will be LOST:")
         for line in doomed:
             bad(f"  {line}")
-        say("  (PVCs on the nfs class survive; reclaimPolicy is Retain)")
+    if survivors:
+        say("\n  PersistentVolumeClaims on nfs — these SURVIVE (reclaimPolicy: Retain):")
+        for line in survivors:
+            say(f"  {line}")
+        # Retain leaves the PV behind as Released, not Available. A rebuilt
+        # cluster provisions fresh directories rather than reattaching these,
+        # so surviving is not the same as coming back by itself.
+        say("  Reattaching them after a rebuild is manual; see docs/bootstrap.md.")
 
     if not args.yes:
         say("")

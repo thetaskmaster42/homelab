@@ -22,9 +22,12 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 - **This GitHub repo is public.** Never commit a plaintext credential. Secrets
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
-- **Disk, not memory, is the constraint.** `k3s-worker-2` has ~57 Gi against
-  ~115 Gi on the others, and `local-path` PVs are node-pinned. Be conservative
-  with PVC sizes.
+- **All persistent storage is NFS on `portal` (192.168.11.3).** `nfs` is the
+  default and only StorageClass; k3s runs `--disable=local-storage`, so
+  `local-path` does not exist. A PVC naming no class lands on the NAS. This
+  makes `portal` a hard dependency of every stateful workload — see
+  [ADR 0006](docs/decisions/0006-nfs-default-storage.md) before moving anything
+  back to local disk.
 
 ## Architecture
 

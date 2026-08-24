@@ -12,16 +12,35 @@ nfs:
   path: /kubernetes-nfs-storage
   mountOptions:
     - nfsvers=4.1
+    # `hard`, not `soft`: a soft mount returns EIO to the application when the
+    # NAS is slow, and every workload on this class (Postgres, Prometheus TSDB,
+    # OpenBao's file backend) treats a short read/write as corruption rather
+    # than as a retryable error. Blocking is the safe failure mode; losing data
+    # quietly is not.
     - hard
-    # Fail fast rather than hanging pods forever when the NAS is unreachable.
+    # timeo is in DECIseconds, so this is 60s, and retrans=2 means the client
+    # logs "server not responding" after ~3 minutes. Under `hard` it then keeps
+    # retrying forever -- these two only control how quickly the problem becomes
+    # visible in the kernel log, not whether I/O eventually gives up. It does
+    # not. Every pod on this class blocks in uninterruptible sleep until the NAS
+    # returns, which is why `portal` being reachable is now a cluster-wide
+    # dependency rather than a per-app one.
     - timeo=600
     - retrans=2
 
 storageClass:
   name: nfs
-  # local-path stays the cluster default. Opting into NFS is deliberate, because
-  # NFS is the wrong choice for anything with strict fsync semantics.
-  defaultClass: false
+  # THE cluster default, and the only StorageClass that exists: k3s is started
+  # with --disable=local-storage (see clusters/rps/cluster.yaml), so there is no
+  # local-path to fall back to. A PVC that names no class lands here.
+  #
+  # This inverts the earlier default. The reason is that node-pinning turned out
+  # to cost more than fsync strictness does: a local-path PV cannot be
+  # rescheduled when its node dies, and `homelab nuke` destroys it outright,
+  # which made every rebuild total data loss. See
+  # docs/decisions/0006-nfs-default-storage.md for what that trade buys and what
+  # it costs.
+  defaultClass: true
   # Retain, not Delete: this storage exists precisely so that data outlives the
   # cluster. A rebuild must not be able to erase it.
   reclaimPolicy: Retain

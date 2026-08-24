@@ -21,15 +21,30 @@ metadata:
 spec:
   instances: 2
 
-  # local-path, NOT the nfs StorageClass, and this is deliberate. CloudNativePG
-  # achieves durability through streaming replication between instances on
-  # different nodes, not through shared storage — and PostgreSQL's fsync
-  # guarantees are exactly what NFS is worst at. Node-pinning is fine here
-  # because a lost node is handled by failover to the replica, not by moving a
-  # volume.
+  # nfs. This reverses the original choice, and the original argument still
+  # holds on its own terms: CloudNativePG gets durability from streaming
+  # replication between instances on different nodes, not from shared storage,
+  # and PostgreSQL's fsync guarantees are what NFS is worst at. Read the two
+  # costs before touching this.
+  #
+  # 1. Correlated failure. Both instances now write to the same NAS, so the
+  #    anti-affinity below no longer buys what it used to: it still survives a
+  #    lost NODE, but `portal` going away takes down primary and replica
+  #    together. Physical replication protects against node loss, not against
+  #    the storage under both copies.
+  # 2. fsync honesty. Postgres assumes a completed fsync means durable. An NFS
+  #    server that buffers writes can violate that across a power cut, and
+  #    Postgres has no way to detect it -- the damage surfaces later as a
+  #    corrupt page. `hard` mounts turn a NAS outage into a hang rather than an
+  #    error, which is the failure mode Postgres survives; a power cut on
+  #    `portal` mid-write is the one it does not.
+  #
+  # What makes this survivable is barman backups to a SEPARATE target, which do
+  # not exist yet. Until they do, this cluster's recovery story is "reinitialise
+  # empty". See docs/decisions/0006-nfs-default-storage.md.
   storage:
     size: 10Gi
-    storageClass: local-path
+    storageClass: nfs
 
   postgresql:
     parameters:
@@ -44,10 +59,27 @@ spec:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { memory: 1Gi }
 
-  # Keep the primary and its replica on different nodes, or the replica provides
-  # no protection against the failure it exists to survive.
+  # Keep the primary and its replica on different nodes.
+  #
+  # podAntiAffinityType is set explicitly because CNPG defaults it to
+  # `preferred`, and `enablePodAntiAffinity: true` alone therefore renders a
+  # SOFT constraint -- the scheduler tries to separate the instances but will
+  # co-locate both on one node under pressure, silently. Verified against the
+  # live pod spec: it produced preferredDuringSchedulingIgnoredDuringExecution.
+  #
+  # That was tolerable while the volumes were node-local, because a co-located
+  # pair still held two independent copies on two disks. It is not tolerable
+  # now: both instances write to the same NAS, so node separation is the ONLY
+  # remaining protection against correlated failure. A soft rule that quietly
+  # stops applying is worse than no rule, because the topology still looks
+  # right in `kubectl get pods` right up until the moment it doesn't.
+  #
+  # `required` is safely satisfiable here -- 2 instances across 3 nodes. If a
+  # node is down the replica still schedules on the third. If two are down it
+  # stays Pending, which is the correct answer rather than a false comfort.
   affinity:
     enablePodAntiAffinity: true
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
 
   monitoring:

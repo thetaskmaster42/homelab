@@ -106,7 +106,14 @@ it removes a whole class of ordering bugs that explicit sequencing would create.
 `k3s-uninstall.sh` on the server, `k3s-agent-uninstall.sh` on the agents. These
 are different scripts; using the wrong one leaves a broken install behind.
 
-**This destroys all `local-path` data**, since it wipes
-`/var/lib/rancher/k3s/storage`. `nuke` prints the PVCs it is about to destroy and
-requires explicit confirmation. Do not keep anything you care about on
-`local-path` — that is what the NFS provisioner is for.
+**Persistent data now survives this**, which is the point of
+[ADR 0006](decisions/0006-nfs-default-storage.md): every PVC is on the `nfs`
+class with `reclaimPolicy: Retain`, so a nuke wipes
+`/var/lib/rancher/k3s/storage` and finds nothing there. `nuke` lists the PVCs on
+each side — lost and surviving — and requires explicit confirmation.
+
+Surviving is not the same as coming back. `Retain` leaves each PV behind in
+`Released`, and a rebuilt cluster provisions *fresh* directories rather than
+reattaching the old ones. The data sits under the export on `portal` until you
+either point a new PVC at it with a hand-written PV, or delete it to reclaim the
+space. Nothing does that automatically, by design.
