@@ -78,3 +78,19 @@ patches:
         path: /metadata/annotations
         value:
           argocd.argoproj.io/sync-wave: "2"
+
+  # The Ingress carries no wave of its own, so it lands in wave 0 next to the
+  # Cluster -- and ArgoCD will not start wave 1 until every wave-0 resource is
+  # Healthy. A tailscale Ingress only becomes Healthy once the operator assigns
+  # it a loadBalancer address, so any operator outage stalls the sync at wave 0
+  # and the migrate Job and Deployment are never applied: the app is not merely
+  # unreachable, it is not deployed at all. Exposure is the last thing that
+  # should matter, so it goes after the workload rather than before it.
+  - target:
+      kind: Ingress
+      name: prep-tracker
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/sync-wave: "3"
