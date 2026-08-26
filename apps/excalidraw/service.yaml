@@ -1,0 +1,17 @@
+# Port 80: the image is nginx serving a static bundle, and nginx's own config
+# inside it listens on 80. Changing that would mean overriding nginx.conf via a
+# ConfigMap for no benefit -- the Tailscale operator terminates TLS in front.
+apiVersion: v1
+kind: Service
+metadata:
+  name: excalidraw
+  labels:
+    app: excalidraw
+spec:
+  type: ClusterIP
+  selector:
+    app: excalidraw
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

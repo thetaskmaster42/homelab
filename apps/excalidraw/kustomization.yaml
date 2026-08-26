@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: excalidraw
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+images:
+  # Our fork's build, not excalidraw/excalidraw. Upstream ships arm64 on
+  # `latest` and nowhere else -- 978 tags, one arm64 manifest -- so there is no
+  # upstream tag this repo is permitted to pin. ADR 0009 has the detail.
+  #
+  # The date is not a version number pretending to be one: the fork tracks
+  # upstream master, which is 389 commits past v0.18.1, so calling it "0.18.1"
+  # would be false and "0.18.1-master" would sort BEFORE 0.18.1. The companion
+  # sha- tag in GHCR carries exact provenance.
+  - name: ghcr.io/thetaskmaster42/excalidraw
+    newTag: "2026.08.26"

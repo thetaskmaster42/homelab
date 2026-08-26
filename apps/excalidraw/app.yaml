@@ -1,0 +1,11 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo is our FORK, not upstream excalidraw. That is the whole reason this
+# app can exist here: upstream publishes an arm64 build only on `latest`, which
+# CLAUDE.md bans, so the fork carries a workflow that publishes the same
+# unmodified Dockerfile to GHCR under a real version. See ADR 0009.
+name: excalidraw
+namespace: excalidraw
+sourceRepo: https://github.com/thetaskmaster42/excalidraw
+exposure: tailnet

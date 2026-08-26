@@ -1,0 +1,22 @@
+# Tailnet-only. Excalidraw has no authentication -- no login, no session, no
+# password -- so the tailnet is the entire access control, exactly as for draw.io
+# and Headlamp.
+#
+# Never add tailscale.com/funnel here. That drawings live in the visitor's own
+# browser rather than on the server is not a defence: funnelling would put an
+# open editor on a public hostname, and anyone who found it could use this
+# cluster's bandwidth and CPU indefinitely.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: excalidraw
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: excalidraw
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - excalidraw

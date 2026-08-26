@@ -1,0 +1,83 @@
+# Excalidraw, stateless. No PVC, and like draw.io that is not a gap to close
+# later: the image is nginx serving a static JavaScript bundle, and the editor
+# runs entirely in the browser. Drawings live in the visitor's localStorage, so
+# the server never receives one and a mounted volume would be storage nothing
+# ever writes to.
+#
+# The consequence worth knowing before using it: drawings are per-browser and
+# per-device. Nothing syncs between your laptop and your phone, and clearing
+# site data loses them. Use "Save to..." and commit the .excalidraw file if it
+# matters. See docs/decisions/0009-excalidraw-fork-and-arm64-build.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalidraw
+  labels:
+    app: excalidraw
+spec:
+  replicas: 1
+  # RollingUpdate with no surge gap: there is no volume to contend over, so a
+  # second pod can start before the first goes and upgrades cost no downtime.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: excalidraw
+  template:
+    metadata:
+      labels:
+        app: excalidraw
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: excalidraw
+          image: ghcr.io/thetaskmaster42/excalidraw:2026.08.26
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          securityContext:
+            allowPrivilegeEscalation: false
+            # NOT runAsNonRoot, unlike drawio beside it. This image declares no
+            # USER, so nginx's master starts as root -- it needs that to bind
+            # :80, and forcing a non-root UID makes the entrypoint fail rather
+            # than degrade. Running fully unprivileged would mean overriding
+            # nginx.conf to a high port via a ConfigMap; that is a real option,
+            # just not one taken for a static file server on a private tailnet.
+            #
+            # What IS done is dropping every capability and adding back only the
+            # five the entrypoint actually uses: bind the port, chown the cache
+            # dirs, and drop the worker processes to the nginx user. Verified by
+            # running the image with exactly this set before committing it --
+            # nginx starts its workers and serves normally.
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE"]
+          # Measured, not guessed: this image pulls in 3.4s (it is 29MB) and
+          # serves in under a second, because nginx has nothing to do at startup
+          # but read a config. The delays below are therefore generous.
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Measured at 4Mi RSS and 1m CPU at idle -- it is nginx serving static
+          # files, which is as cheap as anything in this cluster gets. The
+          # request is set well above that anyway so a burst of asset requests
+          # does not push it into reclaim, and the limit leaves room for nginx's
+          # worker-per-core scaling on a 4-core Pi.
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
