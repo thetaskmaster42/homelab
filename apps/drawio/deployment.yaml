@@ -1,0 +1,94 @@
+# draw.io, stateless. There is deliberately no PVC: the container is a Tomcat
+# instance serving static JavaScript, and the editor runs entirely in the
+# browser. The server never receives a diagram, so a mounted volume would be
+# storage that nothing ever writes to. Diagrams are saved to the device and
+# pushed to git by hand — an MVP choice; see ADR 0007 for the alternatives.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drawio
+  labels:
+    app: drawio
+spec:
+  replicas: 1
+  # RollingUpdate, unlike rh-dashboard's Recreate. Nothing here is a single
+  # writer to a ReadWriteOnce volume, so two pods can briefly coexist and an
+  # upgrade costs no downtime at all.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: drawio
+  template:
+    metadata:
+      labels:
+        app: drawio
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # UID 1001 / GID 999 are pinned in the upstream Dockerfile, and
+        # CATALINA_HOME is chowned tomcat:0.
+        #
+        # runAsGroup 0 is load-bearing, not decoration. The entrypoint writes
+        # PreConfig.js into CATALINA_HOME at startup, and when that write fails
+        # it does NOT crash — it prints a warning and starts Tomcat anyway with
+        # every DRAWIO_* setting silently skipped, the CSP header included. So
+        # the failure mode is a working-looking app that quietly lost its
+        # security header. Upstream documents runAsGroup 0 as the fix
+        # (jgraph/docker-drawio#186).
+        runAsUser: 1001
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: drawio
+          image: jgraph/drawio:31.3.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # NOT readOnlyRootFilesystem. The entrypoint must write PreConfig.js
+            # into the webapp directory; a read-only root filesystem trips the
+            # same silent-skip path described above.
+            readOnlyRootFilesystem: false
+          env:
+            # The image proxy fetches arbitrary URLs server-side. On a LAN whose
+            # other residents are the NAS and the gateway router, that is an SSRF
+            # primitive reachable by anyone on the tailnet, traded for the
+            # convenience of importing images by URL. Left off deliberately.
+            - name: ENABLE_DRAWIO_PROXY
+              value: "0"
+          # Measured, not guessed: container start to serving is ~5s cold and
+          # ~6s warm on a Pi 5, so these delays are comfortable rather than
+          # hopeful. Tomcat is only deploying a static webapp here — there is no
+          # framework context to build, which is why it is this quick.
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Measured at ~90Mi RSS and 8m CPU at idle. An earlier draft asked for
+          # 512Mi/1Gi, which was about five times too much — the JVM heap tracks
+          # the memory LIMIT under JDK 11 container awareness, so an inflated
+          # limit inflates the heap for no benefit.
+          #
+          # Memory limit only, no CPU limit: startup briefly draws over a full
+          # core for JIT, and a CPU limit would throttle exactly the phase we
+          # want to stay fast. This matches every other service in the repo.
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }

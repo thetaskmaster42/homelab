@@ -1,0 +1,18 @@
+# Port 8080 only. The image also exposes 8443 for its own TLS, which is dead
+# weight here: the Tailscale operator terminates TLS and supplies the real
+# Let's Encrypt certificate, so container-side HTTPS would be a second, worse
+# copy of something already solved.
+apiVersion: v1
+kind: Service
+metadata:
+  name: drawio
+  labels:
+    app: drawio
+spec:
+  type: ClusterIP
+  selector:
+    app: drawio
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

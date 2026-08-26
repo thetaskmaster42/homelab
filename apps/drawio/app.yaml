@@ -1,0 +1,11 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo points UPSTREAM rather than at one of our repos, which is the one
+# way this app breaks the usual pattern: draw.io is third-party, so there is no
+# homebuilt source and no k8s/ base to pull. Every manifest here is written
+# locally instead — the same shape rh-dashboard uses, for a different reason.
+name: drawio
+namespace: drawio
+sourceRepo: https://github.com/jgraph/docker-drawio
+exposure: tailnet

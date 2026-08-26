@@ -1,0 +1,22 @@
+# Tailnet-only, and this one is not a judgement call: draw.io ships NO
+# authentication of any kind. There is no login, no password, no session. The
+# tailnet is the entire access control, exactly as it is for Headlamp.
+#
+# Never add tailscale.com/funnel here. Funnelling this would put an open editor
+# on the public internet. That it holds no server-side data is not a defence —
+# it would still be an unauthenticated app on a public hostname, and the CSP
+# permits it to reach api.github.com and Google's domains from the browser.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: drawio
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: drawio
+      port:
+        number: 8080
+  tls:
+    - hosts:
+        - drawio

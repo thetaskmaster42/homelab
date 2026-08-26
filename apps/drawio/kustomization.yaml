@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: drawio
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+images:
+  # Pinned, never `latest`. That rule bites harder here than usual: of 939 tags
+  # on jgraph/drawio the arm64 builds are plentiful, but the neighbouring
+  # excalidraw image publishes arm64 ONLY on `latest`, which is why draw.io got
+  # picked and excalidraw did not. See ADR 0007.
+  - name: jgraph/drawio
+    newTag: "31.3.2"
