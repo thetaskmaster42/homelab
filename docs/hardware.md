@@ -42,15 +42,19 @@ outright. A bigger card raises the ceiling and changes none of that — which is
 why upgrading worker-2 solved the capacity complaint without solving the real
 one.
 
-So there is now exactly **one** StorageClass, and it is the default:
+So there are two StorageClasses, split by whether the data can be rebuilt:
 
-| Class | Backed by | Notes |
+| Class | Backed by | Holds |
 |---|---|---|
-| `nfs` (default, only) | `portal:/export/kubernetes-nfs-storage` | `reclaimPolicy: Retain`, RWX-capable, `hard` mounts |
+| `nfs` (default) | `portal:/export/kubernetes-nfs-storage` | application + database data; `reclaimPolicy: Retain`, RWX-capable, `hard` mounts |
+| `local-path` (also default) | node-local disk, via k3s's bundled addon | Prometheus, Grafana and OpenBao — reconstructible, and must survive a NAS outage |
 
-`local-path` is gone: k3s runs with `--disable=local-storage`. A PVC that names
-no `storageClassName` lands on `nfs`, which is what makes it the default for
-applications without any per-app configuration.
+**Both are marked default.** k3s re-applies its `local-path` addon on every server
+start and marks it default; overriding that would mean two controllers fighting
+over one object. Kubernetes breaks a tie between defaults by creation timestamp,
+so an omitted class is arbitrary and can differ between rebuilds. **Every PVC in
+this repo therefore names its class explicitly**, and `tests/test_apps.py` fails
+the build if one does not.
 
 `reclaimPolicy: Retain` exists precisely so that a cluster rebuild cannot
 destroy the data. The trade this makes — NFS under PostgreSQL, Prometheus and
@@ -79,13 +83,12 @@ installed by `homelab install`, not by hand — without it a pod hangs in
 `ContainerCreating` reporting only `exit status 32`, which says nothing about the
 real cause.
 
-Because `portal` is a single un-replicated NAS, it is a hard dependency for
-**every** stateful workload in the cluster — OpenBao and PostgreSQL included,
-which previously stayed on `local-path` for exactly this reason. That is the
-central cost of [ADR 0006](decisions/0006-nfs-default-storage.md), and it is
-accepted rather than solved: it buys node-independence and rebuild-survival, and
-it concentrates the blast radius of a NAS outage from one dashboard to all
-cluster state.
+Because `portal` is a single un-replicated NAS, it is a hard dependency for every
+workload on the `nfs` class — which is all application and database data.
+The monitoring stack and OpenBao are deliberately not on it
+([ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)), so
+metrics, dashboards and secrets all keep working through a NAS outage — you can
+see the failure and deploy your way out of it.
 
 The `hard` mount option means the failure mode is a hang, not corruption. Pods
 block in uninterruptible sleep until `portal` returns, then continue. So a NAS

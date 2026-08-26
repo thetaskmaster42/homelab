@@ -1,17 +1,18 @@
 # Tuned for three Raspberry Pis, not a datacentre.
 #
-# Storage is the binding constraint, not memory. Both PVCs below are now on the
-# `nfs` class, so they are no longer pinned to whichever node first scheduled
-# them and no longer bounded by k3s-worker-2's ~57Gi. Retention and volume sizes
-# stay small anyway: they are now bounded by the `portal` NAS, which is one
-# 4GB Pi serving the whole cluster.
+# Storage is the binding constraint, not memory.
 #
-# Read the upstream warning before raising these. Prometheus documents NFS as
-# unsupported for its local TSDB -- it relies on POSIX semantics most NFS
-# implementations only approximate, and the documented failure mode is silent,
-# unrecoverable block corruption rather than a clean error. 7d/8GB keeps the
-# cost of rebuilding from empty low, because rebuilding from empty is the
-# recovery plan. See docs/decisions/0006-nfs-default-storage.md.
+# BOTH volumes below are on local-path, after a spell on NFS. The reason is in
+# docs/decisions/0008-local-disk-for-observability-and-secrets.md: under `hard`
+# NFS mounts a NAS outage blocks the TSDB write path, scrapes pile up in memory
+# until the pod is OOMKilled, and the unclean restart replays a WAL that upstream
+# explicitly says NFS may have corrupted. Worse, this stack IS the alerting --
+# putting it on the NAS means a NAS failure silences the system that would have
+# told you about it, and blanks the dashboards you would look at next.
+#
+# Node-pinning is the price, and it is the right one here: metrics are the most
+# disposable data in the cluster. The recovery plan for a lost node is to start
+# from empty, which is also why retention stays at 7d/8GB.
 
 grafana:
   # Without this the chart generates a fresh random admin password on EVERY
@@ -54,13 +55,17 @@ grafana:
 
   persistence:
     enabled: true
-    # Grafana's own state is a small SQLite file, which is the one thing here
-    # that NFS handles badly for a benign reason rather than a corrupting one:
-    # SQLite needs working file locks. nfsvers=4.1 provides them natively (v4
-    # locking is in-protocol, no rpc.statd), so this is safe where a v3 mount
-    # would not be. Dashboards are provisioned from ConfigMaps regardless, so
-    # the blast radius of losing this volume is saved preferences.
-    storageClassName: nfs
+    # local-path, for the same reason as Prometheus: the monitoring stack must
+    # not depend on the thing it is most needed to report on. Grafana's SQLite
+    # file would survive NFS fine on its own -- nfsvers=4.1 gives it real
+    # in-protocol locking -- but surviving is not the point. A NAS outage that
+    # left Prometheus scraping while Grafana could not render would leave you
+    # partly blind exactly when you need to look.
+    #
+    # Losing this volume is cheap: dashboards are provisioned from ConfigMaps and
+    # the admin credential comes from the grafana-admin Secret at bootstrap, so
+    # what is actually stored here is saved preferences.
+    storageClassName: local-path
     size: 2Gi
   resources:
     requests: { cpu: 100m, memory: 128Mi }
@@ -83,10 +88,12 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: nfs
-          # RWO even though the nfs class can serve RWX. Prometheus must never
-          # have two writers against one TSDB, and RWO is what stops a second
-          # pod mounting it during a rolling update.
+          # Explicit, never inherited. Two default StorageClasses exist in this
+          # cluster (see clusters/rps/cluster.yaml), so an omitted class is
+          # non-deterministic rather than merely implicit.
+          storageClassName: local-path
+          # RWO is what local-path gives anyway, but state it: Prometheus must
+          # never have two writers against one TSDB.
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:

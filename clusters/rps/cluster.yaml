@@ -18,21 +18,25 @@ spec:
     version: v1.36.3+k3s1
     clusterCIDR: 10.42.0.0/16
     serviceCIDR: 10.43.0.0/16
-    # All six flags are load-bearing.
+    # All five flags are load-bearing.
+    #
+    # local-storage is deliberately NOT disabled, though it was briefly. k3s's
+    # bundled local-path provisioner is what backs Prometheus and OpenBao, which
+    # must keep working when the NAS does not — see
+    # docs/decisions/0008-local-disk-for-observability-and-secrets.md.
+    #
+    # The consequence is that k3s marks local-path as a default StorageClass and
+    # we cannot stop it: the addon is a wrangler objectset (owner-gvk
+    # k3s.cattle.io/v1, Kind=Addon) re-applied on every server start, so an
+    # annotation flip from ArgoCD would be two controllers fighting over one
+    # object. So `nfs` is default too, and TWO defaults exist. That is safe only
+    # because nothing relies on the default: every PVC in this repo names its
+    # class explicitly, and tests/test_apps.py fails the build if one does not.
     serverArgs:
       - --flannel-backend=none      # Calico is the CNI
       - --disable-network-policy    # Calico enforces policy instead
       - --disable=servicelb         # MetalLB provides LoadBalancer IPs
       - --disable=traefik           # Traefik is a GitOps-managed Helm chart
-      # The nfs StorageClass is the cluster default and local-path has no
-      # remaining consumers, so the addon is removed rather than left in place
-      # and annotated non-default. k3s owns local-path through a wrangler
-      # objectset (owner-gvk k3s.cattle.io/v1, Kind=Addon) and reconciles it on
-      # every server start, so an ArgoCD-managed annotation flip would be two
-      # controllers fighting over one object — the failure mode this repo
-      # avoids everywhere else. Disabling it at the source has no such fight.
-      # See docs/decisions/0006-nfs-default-storage.md.
-      - --disable=local-storage     # nfs-provisioner is the only StorageClass
       - --write-kubeconfig-mode=644
 
   cni:

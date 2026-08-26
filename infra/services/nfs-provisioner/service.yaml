@@ -1,5 +1,6 @@
-# Dynamic PersistentVolumes backed by the `portal` NAS. The cluster's ONLY
-# StorageClass, and its default.
+# Dynamic PersistentVolumes backed by the `portal` NAS. The default class for
+# application data; k3s's local-path sits alongside it for the two workloads
+# that must survive a NAS outage (ADR 0008).
 #
 # This exists to solve node-pinning, not capacity. The built-in `local-path`
 # StorageClass binds a volume to whichever node first scheduled its pod, and
@@ -7,13 +8,16 @@
 # `homelab nuke` destroys the data outright. Adding a bigger card to a node
 # raises its ceiling but changes none of that.
 #
-# Every PVC in the cluster now lands here, including the ones that would rather
-# have local disks (cloudnative-pg, kube-prometheus-stack, openbao). That is a
-# deliberate trade of fsync strictness for mobility and survivability, argued in
-# docs/decisions/0006-nfs-default-storage.md. The cost is concentration: this
-# Application and the `portal` NAS behind it are now a single point of failure
-# for all cluster state, where before the blast radius of a NAS outage was one
-# dashboard.
+# Application data lands here -- cloudnative-pg, prep-tracker's database,
+# rh-dashboard -- because it is the data that is not reconstructible and that
+# `homelab nuke` must not be able to erase. The monitoring stack and OpenBao
+# deliberately do NOT: their state is reconstructible, and they are precisely
+# what must keep working when the NAS does not. That split is argued in
+# docs/decisions/0008-local-disk-for-observability-and-secrets.md.
+#
+# The cost of everything else being here is concentration: this Application and
+# the `portal` NAS behind it are a single point of failure for all application
+# state.
 #
 # The retry-driven ordering in argocd/registry/ is what makes that survivable at
 # sync time — a PVC on a class whose provisioner is not up yet simply stays

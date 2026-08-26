@@ -30,16 +30,19 @@ nfs:
 
 storageClass:
   name: nfs
-  # THE cluster default, and the only StorageClass that exists: k3s is started
-  # with --disable=local-storage (see clusters/rps/cluster.yaml), so there is no
-  # local-path to fall back to. A PVC that names no class lands here.
+  # Default for applications -- but NOT the only default, and not the only class.
+  # k3s's bundled local-path is back for Prometheus and OpenBao (ADR 0008) and
+  # marks itself default in a way we cannot override without two controllers
+  # fighting over one object. So both are flagged default.
   #
-  # This inverts the earlier default. The reason is that node-pinning turned out
-  # to cost more than fsync strictness does: a local-path PV cannot be
-  # rescheduled when its node dies, and `homelab nuke` destroys it outright,
-  # which made every rebuild total data loss. See
-  # docs/decisions/0006-nfs-default-storage.md for what that trade buys and what
-  # it costs.
+  # That is safe only because nothing in this repo relies on the default: every
+  # PVC names its class, and tests/test_apps.py fails the build if one does not.
+  # Kubernetes breaks a tie between defaults by creation timestamp, so an
+  # inherited class here would be arbitrary and would differ between rebuilds.
+  #
+  # Kept true regardless, because it makes the intent legible and gives the right
+  # answer for anything created by hand outside the repo. See
+  # docs/decisions/0006-nfs-default-storage.md.
   defaultClass: true
   # Retain, not Delete: this storage exists precisely so that data outlives the
   # cluster. A rebuild must not be able to erase it.

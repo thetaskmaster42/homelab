@@ -106,11 +106,13 @@ it removes a whole class of ordering bugs that explicit sequencing would create.
 `k3s-uninstall.sh` on the server, `k3s-agent-uninstall.sh` on the agents. These
 are different scripts; using the wrong one leaves a broken install behind.
 
-**Persistent data now survives this**, which is the point of
-[ADR 0006](decisions/0006-nfs-default-storage.md): every PVC is on the `nfs`
-class with `reclaimPolicy: Retain`, so a nuke wipes
-`/var/lib/rancher/k3s/storage` and finds nothing there. `nuke` lists the PVCs on
-each side — lost and surviving — and requires explicit confirmation.
+**Application data survives this; Prometheus and OpenBao do not.** PVCs on the
+`nfs` class use `reclaimPolicy: Retain`, so a nuke leaves them on `portal`
+untouched. Prometheus and OpenBao are on `local-path`
+([ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)), which
+lives under `/var/lib/rancher/k3s/storage` and is erased outright — expect to
+re-initialise and re-seed OpenBao, and to start metrics from empty, after every
+rebuild. `nuke` lists the PVCs on each side and requires explicit confirmation.
 
 Surviving is not the same as coming back. `Retain` leaves each PV behind in
 `Released`, and a rebuilt cluster provisions *fresh* directories rather than

@@ -34,7 +34,6 @@ def test_agent_install_script_matches_golden(cluster):
         "--disable-network-policy",   # Calico enforces policy
         "--disable=servicelb",        # MetalLB provides LoadBalancer IPs
         "--disable=traefik",          # Traefik is a config-driven Helm service
-        "--disable=local-storage",    # nfs-provisioner is the only StorageClass
         "--write-kubeconfig-mode=644",
     ],
 )

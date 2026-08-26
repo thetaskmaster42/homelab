@@ -95,11 +95,14 @@ Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.m
 - **Applications share one PostgreSQL**, run by the CloudNativePG operator in
   the `databases` namespace — a database and role per app, not a database per
   app.
-- **One StorageClass: `nfs`**, the default, backed by the `portal` NAS. k3s runs
-  with `--disable=local-storage`, so node-local `local-path` volumes no longer
-  exist. This trades PostgreSQL and Prometheus' preference for local `fsync`
-  against volumes that survive a rebuild and can move between nodes. See
-  [ADR 0006](docs/decisions/0006-nfs-default-storage.md).
+- **Storage splits by whether the data can be rebuilt.** Application and database
+  data goes on `nfs` (the `portal` NAS) so it survives node loss and
+  `homelab nuke`. The monitoring stack and OpenBao stay on node-local `local-path`,
+  because they are reconstructible and are precisely what must keep working when
+  the NAS does not. Both classes are marked default, so **every PVC names
+  its class explicitly** and CI enforces it. See
+  [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and
+  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md).
 - Comment the *why* on non-default settings. The reason a flag is set is the
   part that is expensive to rediscover.
 

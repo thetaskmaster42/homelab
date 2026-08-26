@@ -86,6 +86,23 @@ patches:
   # and the migrate Job and Deployment are never applied: the app is not merely
   # unreachable, it is not deployed at all. Exposure is the last thing that
   # should matter, so it goes after the workload rather than before it.
+  # The app repo's Cluster declares `storage: {size: 1Gi}` and no class, so it
+  # inherited whatever the cluster default was. That is not safe any more: k3s's
+  # local-path and our nfs are BOTH marked default (see clusters/rps/cluster.yaml),
+  # and Kubernetes picks between two defaults by creation timestamp -- which is
+  # to say, arbitrarily, and differently after every rebuild.
+  #
+  # Application data belongs on NFS so it survives node loss and `homelab nuke`.
+  # Pin it here rather than waiting for an upstream change, because the failure
+  # this prevents is silent: the database would simply come back empty one day.
+  - target:
+      kind: Cluster
+      name: prep-tracker-db
+    patch: |-
+      - op: add
+        path: /spec/storage/storageClass
+        value: nfs
+
   - target:
       kind: Ingress
       name: prep-tracker

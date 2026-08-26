@@ -65,9 +65,14 @@ This cluster used to run on `local-path`, and the argument for that was sound:
 > solve, is not a problem here. PostgreSQL also depends on strict `fsync`
 > semantics, and that is exactly what NFS is worst at.
 
-[ADR 0006](decisions/0006-nfs-default-storage.md) overrode it, cluster-wide:
-`local-path` no longer exists. Two consequences matter specifically here, and
-neither is hypothetical.
+[ADR 0006](decisions/0006-nfs-default-storage.md) overrode it. `local-path` does
+still exist — [ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)
+brought it back for Prometheus and OpenBao — but database data deliberately stays
+on `nfs`. `homelab nuke` erases every `local-path` volume, and application data is
+the one thing here that cannot be reconstructed.
+
+Two consequences of being on NFS matter specifically here, and neither is
+hypothetical.
 
 **The replica no longer protects against storage loss.** Both instances write to
 `portal`. `enablePodAntiAffinity` still puts them on different nodes and still

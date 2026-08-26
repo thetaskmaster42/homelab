@@ -1,6 +1,10 @@
 # 0006 — NFS is the default and only StorageClass
 
-**Status:** accepted, 2026-08-24
+**Status:** accepted, 2026-08-24 — **partially superseded** by
+[ADR 0008](0008-local-disk-for-observability-and-secrets.md), which returns
+Prometheus and OpenBao to local disk. `nfs` remains the default class for
+application data; it is no longer the *only* class, and `--disable=local-storage`
+has been reverted.
 
 Supersedes the storage split described in `0001`-era comments, where `nfs` was
 opt-in and `local-path` was the default.
@@ -90,6 +94,12 @@ NFS. So it is worth being precise about which pods gained that dependency:
 | k3s, Calico, MetalLB, Traefik, cert-manager, tailscale-operator, ArgoCD, CNPG operator | **no** | no PVCs at all |
 | `nfs-provisioner` itself | no (bootstrap) | its own PVC binds a **static** PV pointing straight at `192.168.11.3`, so it does not depend on the class it provides |
 | `postgres` ×2, `prep-tracker-db` ×3, Prometheus, Grafana, OpenBao | **yes** | NFS-backed PVC |
+
+> **Superseded rows.** Prometheus, Grafana and OpenBao moved back to `local-path`
+> in [ADR 0008](0008-local-disk-for-observability-and-secrets.md) and no longer
+> block on `portal`. The table is left as written, because the reasoning below it
+> is what led to that reversal.
+
 | everything's `emptyDir`, image layers, container logs | no | node-local under `/var/lib/rancher/k3s` |
 
 The layering is the point: a cold boot with the NAS down still produces a working

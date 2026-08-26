@@ -46,22 +46,27 @@ A pod that is `Running` but `0/1 Ready` with `Sealed: true` is the normal sealed
 state, not a fault. Applications using the injector will show init containers
 stuck waiting for a secret — that is the downstream symptom.
 
-## Why it is on NFS, despite wanting local disk
+## Why it is on local disk, not NFS
 
-It used to be on `local-path`, for good reasons: the secret store should not
-depend on the NAS being reachable, and OpenBao's file backend wants local fsync
-semantics. [ADR 0006](../decisions/0006-nfs-default-storage.md) removed
-`local-path` from the cluster entirely, so `nfs` is now the only option.
+It spent a brief spell on `nfs` and is back on `local-path`
+([ADR 0008](../decisions/0008-local-disk-for-observability-and-secrets.md)).
 
-That is tolerable because of how it fails and how it recovers. The mount is
-`hard`, so a NAS outage *blocks* OpenBao rather than corrupting it — the pod
-hangs in uninterruptible sleep and comes back when `portal` does. And the
-recovery path has not changed: if the volume is lost, re-initialise and re-seed
-from the SOPS-encrypted bootstrap bundle. That still means what OpenBao holds
-must be reproducible, never the only copy of anything.
+The deciding argument is a recovery deadlock. Under `hard` NFS mounts a NAS
+outage *blocks* OpenBao rather than corrupting it — the pod hangs in
+uninterruptible sleep and recovers when `portal` returns. But a blocked OpenBao
+cannot serve the injector, so **no new pod needing an injected secret can
+start.** The outage stops being something you can deploy your way out of, which
+is the worst possible property for the component that gates recovery.
 
-The practical consequence: **`portal` being down now blocks the unseal itself.**
-Check the NAS before debugging a sealed OpenBao that will not start.
+The trade is node-pinning: if OpenBao's node dies, the volume does not move and
+OpenBao does not reschedule until it returns. That is acceptable because this
+volume is reconstructible — losing it costs a re-initialise and a re-seed from
+the SOPS-encrypted bootstrap bundle, not lost secrets. What OpenBao holds must
+be reproducible, never the only copy of anything.
+
+**`homelab nuke` erases this volume**, since `local-path` lives under
+`/var/lib/rancher/k3s/storage`. Re-initialising and unsealing is a normal part
+of the rebuild drill, not a sign something went wrong.
 
 ## Where this goes next
 

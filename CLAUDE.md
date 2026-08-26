@@ -22,12 +22,13 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 - **This GitHub repo is public.** Never commit a plaintext credential. Secrets
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
-- **All persistent storage is NFS on `portal` (192.168.11.3).** `nfs` is the
-  default and only StorageClass; k3s runs `--disable=local-storage`, so
-  `local-path` does not exist. A PVC naming no class lands on the NAS. This
-  makes `portal` a hard dependency of every stateful workload — see
-  [ADR 0006](docs/decisions/0006-nfs-default-storage.md) before moving anything
-  back to local disk.
+- **Two StorageClasses, and TWO defaults.** `nfs` (on `portal`, 192.168.11.3)
+  holds application data; k3s's `local-path` holds the monitoring stack and
+  OpenBao, which must survive a NAS outage. k3s marks `local-path` default and cannot be stopped
+  from doing so, so a PVC naming no class resolves *arbitrarily*. **Every PVC
+  must name its class explicitly** — `tests/test_apps.py` fails the build
+  otherwise. See [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and
+  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md).
 
 ## Architecture
 

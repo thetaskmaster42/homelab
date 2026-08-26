@@ -8,20 +8,23 @@ server:
   dataStorage:
     enabled: true
     size: 2Gi
-    # nfs, because it is now the only StorageClass -- k3s runs with
-    # --disable=local-storage. This reverses the earlier choice here, and the
-    # earlier reasoning was not wrong: the secret store is the last thing that
+    # local-path, and this restores the original choice after a spell on NFS.
+    # The original reasoning was right: the secret store is the last thing that
     # should depend on the NAS being reachable, and the file backend wants local
-    # fsync semantics. Under `hard` mounts a NAS outage does not corrupt the
-    # store, it blocks it -- OpenBao hangs rather than losing data, and the pod
-    # recovers when `portal` returns.
+    # fsync semantics.
     #
-    # What makes that acceptable is the recovery plan, which has not changed:
-    # this volume is reconstructible. Losing it costs a re-initialise and a
-    # re-seed, not lost secrets, because the seeds come from the SOPS-encrypted
-    # bootstrap bundle in git. Treat it as a cache of unsealed state, not as the
+    # The specific failure that sent it back is a recovery deadlock. Under `hard`
+    # mounts a NAS outage blocks OpenBao rather than corrupting it -- but a
+    # blocked OpenBao means the injector cannot render secrets, so no new pod
+    # that needs an injected secret can start. The outage stops being something
+    # you can deploy your way out of. See
+    # docs/decisions/0008-local-disk-for-observability-and-secrets.md.
+    #
+    # Node-pinning is acceptable because this volume is reconstructible: losing
+    # it costs a re-initialise and a re-seed from the SOPS-encrypted bootstrap
+    # bundle, not lost secrets. Treat it as a cache of unsealed state, not the
     # system of record.
-    storageClass: nfs
+    storageClass: local-path
     accessMode: ReadWriteOnce
 
   resources:

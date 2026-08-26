@@ -39,6 +39,13 @@ spec:
   #    error, which is the failure mode Postgres survives; a power cut on
   #    `portal` mid-write is the one it does not.
   #
+  # This stays on nfs even though local-path came back for Prometheus and
+  # OpenBao (ADR 0008). That is a deliberate split, not an oversight: metrics and
+  # unseal state are reconstructible, so node-pinning them is cheap. Application
+  # data is not reconstructible, and `homelab nuke` erases every local-path
+  # volume outright -- which would make the routine rebuild drill destroy the one
+  # thing here worth keeping.
+  #
   # What makes this survivable is barman backups to a SEPARATE target, which do
   # not exist yet. Until they do, this cluster's recovery story is "reinitialise
   # empty". See docs/decisions/0006-nfs-default-storage.md.
