@@ -40,6 +40,10 @@ echo "--- undervoltage alarms (rpi_volt) ---"
 for f in /sys/class/hwmon/hwmon*/in0_lcrit_alarm; do echo "$f = $(cat $f 2>/dev/null)"; done
 
 echo "--- boots retained ---"
+# READ THE SECOND DATE, NOT THE FIRST. A Pi 5 has no RTC battery, so every boot
+# starts with the same bogus clock until NTP corrects it -- every row here shows
+# an identical, meaningless start time. The END timestamp is the real signal:
+# it is when that boot stopped, i.e. when the node went down.
 sudo journalctl --list-boots --no-pager | tail -6
 
 echo "--- did the PREVIOUS boot end cleanly? ---"
@@ -52,8 +56,44 @@ sudo journalctl -b -1 -k --no-pager \
 echo "--- this boot: filesystem recovery (proof of an unclean stop) ---"
 sudo journalctl -b 0 -k --no-pager | grep -iE "recovering journal|EXT4-fs .*(recovery|error)|orphan" | head -10
 
-echo "--- k3s server: last words before it died ---"
-sudo journalctl -u k3s -b -1 --no-pager | tail -30
+echo "--- previous boot: network reachability failures ---"
+# The signature that distinguishes the two failure modes, and the reason this
+# section exists: a node whose NETWORK died stays alive and logs these for as
+# long as it is isolated, while a node that actually died logs nothing at all
+# and its journal simply stops mid-line. On k3s-worker-1 this showed the node
+# was up and retrying for 2h10m AFTER Kubernetes had written it off.
+#
+# Both the control plane and the NAS appear here, deliberately: if only the API
+# server is unreachable it is a k3s problem, but if the NAS is unreachable too
+# then the whole network path is gone.
+sudo journalctl -b -1 --no-pager \
+  | grep -iE "not responding|connection timed out|Failed to connect to proxy|no route to host|network is unreachable|NETDEV WATCHDOG|link is not ready|carrier lost" \
+  | tail -25
+
+echo "--- k3s: last words before it died ---"
+# The unit name differs by role -- `k3s` on the server, `k3s-agent` on workers.
+# Asking for the wrong one returns "No entries", which reads as "the node said
+# nothing" rather than "you asked the wrong question". That false negative cost
+# a whole section of the k3s-worker-1 post-mortem, so resolve it rather than
+# assume.
+k3s_unit=""
+for u in k3s k3s-agent; do
+  if systemctl cat "$u.service" >/dev/null 2>&1; then k3s_unit="$u"; break; fi
+done
+if [ -n "$k3s_unit" ]; then
+  echo "(unit: $k3s_unit)"
+  sudo journalctl -u "$k3s_unit" -b -1 --no-pager | tail -30
+else
+  echo "no k3s or k3s-agent unit found on this host"
+fi
+
+echo "--- current link state ---"
+# Baseline only, and worth being explicit about why: interface counters and link
+# status are per-boot and were reset by the reboot that made this host reachable
+# again. The failure's own counters are gone by the time this script can run --
+# capturing those is what scripts/net-watchdog.sh is for, before it reboots.
+ip -s link show eth0 2>/dev/null | head -6
+ethtool eth0 2>/dev/null | grep -iE "speed|duplex|link detected"
 REMOTE
 
 echo "written: $REPORT"
