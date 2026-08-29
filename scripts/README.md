@@ -10,8 +10,42 @@ about how these Pis fail, and that is the expensive thing to rediscover.
 
 | Script | Runs on | What it does |
 |---|---|---|
+| `bump-app-version.sh` | the laptop | Repins an application's image tag in `apps/*/kustomization.yaml`, refusing anything that would not deploy |
 | `collect-crash-evidence.sh` | the laptop | Waits for a dead node to answer, then captures the *previous* boot's journal before it rolls over |
 | `net-watchdog.sh` | a node | Detects the link-up-but-no-traffic blackhole and escalates: bounce the interface, then reboot |
+
+## bump-app-version.sh
+
+```sh
+./scripts/bump-app-version.sh rh-dashboard 1.0.3
+./scripts/bump-app-version.sh rh-dashboard 1.0.3 excalidraw 2026.09.01
+./scripts/bump-app-version.sh --check rh-dashboard drawio
+```
+
+It edits the tag and stops. It does not commit and does not deploy — pushing to
+`main` is the deploy, because ArgoCD reconciles from git, so what you get is a
+reviewable one-line diff.
+
+The value is in what it refuses. Every check below is a way this has actually
+gone wrong at least once:
+
+| Refuses | Because |
+|---|---|
+| a tag missing from the registry | merging a PR publishes nothing; the release workflow fires on the **tag** push |
+| an image with no `linux/arm64` | every node here is arm64 — it would `CrashLoopBackOff` with `exec format error` |
+| an overlay that also pins manifests to a commit sha | bumping the tag alone runs new code against old manifests. `prep-tracker` is this case, and its migration Job is exactly what would break |
+
+It also strips a leading `v` and says so: a git tag of `v1.0.3` publishes an
+*image* tag of `1.0.3`, because `release.yml` derives it with
+`${GITHUB_REF_NAME#v}`. Pinning `v1.0.3` resolves to nothing and the pod sits in
+`ImagePullBackOff` with no hint as to why.
+
+Edits are textual, never a YAML round-trip. These kustomizations carry the
+reasoning for every pin, and `safe_load`/`dump` would silently delete every
+comment in them.
+
+Exit status is 0 when everything asked for succeeded or was already current, and
+1 if any app was refused — so it is safe to call from other automation.
 
 ## Why these exist
 

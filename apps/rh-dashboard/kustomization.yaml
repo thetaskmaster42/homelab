@@ -17,4 +17,4 @@ images:
   # v1.0.1 publishes ghcr.io/.../rh-dashboard:1.0.1. Pinning "v1.0.1" here
   # resolves to nothing and the pod sits in ImagePullBackOff.
   - name: ghcr.io/thetaskmaster42/rh-dashboard
-    newTag: "1.0.2"
+    newTag: "1.0.3"
