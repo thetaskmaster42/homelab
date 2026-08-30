@@ -1,9 +1,52 @@
 server:
-  # Single node with file storage. HA raft across three Pis is the obvious next
-  # step, but it triples the unseal ceremony for a homelab with one operator —
-  # revisit once auto-unseal exists (see the note in service.yaml).
+  # Single node, but on RAFT rather than the `file` backend, and the reason is
+  # backups rather than high availability.
+  #
+  # The file backend has no snapshot API at all: the only way to back it up is
+  # to copy the PVC out of band, with the process running and no consistency
+  # guarantee. Raft gives `bao operator raft snapshot save|restore`, which is a
+  # real backup story for the one component whose loss cannot be reconstructed
+  # from git.
+  #
+  # This MUST be decided before `bao operator init`. Changing the storage
+  # backend afterwards means re-initialising: new unseal keys, new root token,
+  # and every secret re-seeded. It is free right now precisely because the store
+  # is still empty.
+  #
+  # replicas stays 1. Raft across three Pis is the obvious next step, but it
+  # triples the unseal ceremony for a homelab with one operator, and HA is not
+  # what this change is for. Single-node raft keeps one unseal and one pod while
+  # still giving snapshots.
   standalone:
+    enabled: false
+  ha:
     enabled: true
+    replicas: 1
+    raft:
+      enabled: true
+      # Node ID from the pod name, so a rescheduled pod rejoins as itself rather
+      # than appearing as a new peer to the raft log.
+      setNodeId: true
+
+    disruptionBudget:
+      # Disabled, and NOT because disruption budgets are unwanted.
+      #
+      # The chart hardcodes maxUnavailable to 0 whenever replicas is 1:
+      #
+      #   {{- if eq (int .Values.server.ha.replicas) 1 -}}{{ 0 }}
+      #   {{- else if .Values.server.ha.disruptionBudget.maxUnavailable -}}
+      #
+      # The override is only reached in the `else if`, so it cannot be set at
+      # this replica count. maxUnavailable 0 means NO voluntary eviction is ever
+      # permitted, and `kubectl drain` on whichever node holds this pod would
+      # hang forever -- the wrong property for a cluster whose nodes have needed
+      # maintenance twice this week.
+      #
+      # With one replica there is no availability for a budget to protect, so
+      # its only effect is to block drain. Re-enable this if replicas ever go to
+      # 3, where the chart WILL honour maxUnavailable and 1 preserves raft
+      # quorum at 2 of 3.
+      enabled: false
 
   dataStorage:
     enabled: true
