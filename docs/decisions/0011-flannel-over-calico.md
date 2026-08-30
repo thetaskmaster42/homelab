@@ -6,6 +6,36 @@
 
 ## Context
 
+### What prompted this
+
+Two nodes went unreachable in as many days. `k3s-worker-1` on 2026-08-27 and
+`k3s-server` on 2026-08-28, both with the same signature: the node alive and its
+kernel logging normally, but answering no ARP at all, so every other host on the
+subnet saw only `FAILED`/`INCOMPLETE`. `k3s-server` stayed that way for roughly
+six hours and `k3s-worker-1` for two, each ending in a manual power cycle. Power
+was ruled out on both (5000 mA negotiated, `in0_lcrit_alarm = 0`), as were
+panics, OOM, thermal events and disk errors.
+
+Calico became a suspect for the ordinary reason: it owned by far the largest
+share of dataplane state on those nodes — 163 iptables chains, over 1200 rules
+in the filter table alone, its own VXLAN device and route table.
+
+**Causation was never established, and this ADR should not be read as claiming
+it.** The observed failure was at layer 2, below anything a CNI touches: the
+node stopped answering ARP for its own `eth0`, which is the kernel's business
+rather than Calico's. The honest position is that the drops made the CNI worth
+re-examining, and that re-examination found the case below independently strong.
+
+That leaves a genuinely useful test. **If the drops recur under flannel, Calico
+is exonerated** and the search moves to the Pi 5 `macb`/RP1 driver, the cabling,
+or the switch ports. If they stop, that is suggestive but still not proof — two
+nodes over two days is not a controlled experiment. Either way the evidence is
+cheaper to gather now: `scripts/collect-crash-evidence.sh` captures the
+post-mortem, and `scripts/net-watchdog.sh` captures the interface counters that
+a reboot destroys.
+
+### The case that stands on its own
+
 Calico was chosen for a policy engine this cluster never used. In the whole
 repository there is not one `NetworkPolicy`, no `GlobalNetworkPolicy`, no host
 endpoint, and the eBPF dataplane was never enabled. What Calico actually did
@@ -67,8 +97,10 @@ It is not true of flannel, which is *inside* the k3s binary and running before
 the API server serves its first request. The constraint has not been worked
 around; it no longer applies. `cni.install()` returns immediately for flannel.
 
-The Calico path is kept in `steps/cni.py` and in the config model, so reversing
-this is a `cluster.yaml` change rather than a rewrite.
+`steps/cni.py` is now only the node-readiness wait, and the config model no
+longer accepts `calico` as a provider. The tigera-operator install is in the git
+history if it is ever wanted back; keeping a dead code path that nothing
+exercises would have been the worse of the two options.
 
 ## What is given up
 
@@ -91,5 +123,12 @@ this is a `cluster.yaml` change rather than a rewrite.
   to register, and no longer has a failure mode there.
 - **Applies only on rebuild.** The CNI is fixed at k3s install time; this needs
   `homelab nuke && homelab install`, not a push.
+- **`homelab nuke` now tears down the CNI dataplane too.** Neither
+  `k3s-uninstall.sh` nor its agent counterpart touches a CNI they did not
+  install, and the first flannel rebuild proved it: `vxlan.calico` still up on
+  all three nodes, stale routes including IPAM blackholes, and 1249/292/210
+  iptables rules still loaded. Nothing persisted them, so the nodes were
+  rebooted once to clear the backlog — but a teardown that needs a reboot to
+  finish is not a teardown, so the cleanup is now part of `nuke`.
 - **`calico-apiserver` currently contributes a seventh NetworkPolicy** which
   disappears with it. Only the six ArgoCD ones need to survive the move.

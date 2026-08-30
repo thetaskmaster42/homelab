@@ -35,7 +35,7 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 ### The CLI/ArgoCD boundary
 
 ```
-clusters/rps/cluster.yaml → homelab CLI → k3s + Calico + ArgoCD + bootstrap secrets
+clusters/rps/cluster.yaml → homelab CLI → k3s (+ its flannel) + ArgoCD + bootstrap secrets
                                               ↓  (CLI's job ends here)
                                            ArgoCD → infra/services/* and apps/*
 ```
@@ -81,10 +81,10 @@ while `values.yaml` comes from this repo via the `$values` ref. This is what let
 
 ### What cannot be GitOps-managed
 
-- **The CNI** — but only if it is a separate install. Flannel is bundled inside
-  the k3s binary and running before the API server serves, so nothing installs
-  it (see [ADR 0011](docs/decisions/0011-flannel-over-calico.md)). The
-  chicken-and-egg that made Calico CLI-owned no longer applies.
+- **The CNI** — nothing installs it. Flannel is bundled inside the k3s binary
+  and running before the API server serves its first request, so there is no
+  ordering problem to solve (see
+  [ADR 0011](docs/decisions/0011-flannel-over-calico.md)).
 - **ArgoCD itself** — something has to run the first install. `homelab bootstrap`
   does, and is idempotent so it doubles as break-glass recovery.
 - **The age private key and Tailscale OAuth client** — they cannot live in the
@@ -96,9 +96,11 @@ versions — don't re-enable those, two controllers fighting over one Deployment
 is the failure mode. Flannel is the exception: it IS the bundled one, and is
 used as such.
 
-**Never add `--disable-network-policy`.** It was there while Calico enforced
-policy. With flannel, it silently disables kube-router and leaves the ArgoCD
-chart's six NetworkPolicies in the API with nothing enforcing them.
+**Never add `--disable-network-policy`.** It disables k3s's kube-router, which
+is what enforces NetworkPolicy here — leaving the ArgoCD chart's six policies in
+the API with nothing enforcing them. No error, no event: a policy that fails
+open. Verified enforced over TCP; note that kube-router allows ICMP echo
+unconditionally, so `ping` cannot be used to test it.
 
 ## Commands
 

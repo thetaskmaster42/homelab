@@ -91,6 +91,69 @@ def uninstall_script(node: Node) -> str:
     return f"if [ -x {script} ]; then {script}; else echo 'k3s not installed'; fi"
 
 
+def cni_cleanup_script() -> str:
+    """Remove the CNI dataplane that k3s-uninstall.sh leaves behind.
+
+    Neither k3s-uninstall.sh nor k3s-agent-uninstall.sh touches a CNI it did not
+    install. After removing Calico this was measured on all three nodes: the
+    vxlan.calico interface still up, stale routes including IPAM blackholes, and
+    1249/292/210 iptables rules still loaded. Nothing persists them, so a reboot
+    clears it — but a teardown that needs a reboot to actually finish is not a
+    teardown, and the sediment stays invisible until it misleads whoever next
+    reads `ip route` on a supposedly clean node.
+
+    Deliberately no sed backreferences: this string is embedded in Python, and
+    `\1` is an octal escape there long before sed ever sees it. awk and cut do
+    the same job with nothing for Python to eat.
+
+    Every command is best-effort. A nuke must not fail because an interface it
+    meant to delete was already absent — that is the expected case on a node
+    that was already clean.
+    """
+    return r"""
+set +e
+
+# Tunnel and bridge devices outlive the uninstall; per-pod veths go with pods.
+for i in vxlan.calico flannel.1 flannel-v6.1 cni0 tunl0 kube-ipvs0 nodelocaldns; do
+  ip link delete "$i" 2>/dev/null
+done
+for i in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^cali'); do
+  ip link delete "$i" 2>/dev/null
+done
+
+# Routes into the pod network, including the blackholes Calico's IPAM leaves for
+# blocks it owned. Read from the live table rather than hardcoded, so a changed
+# cluster-cidr cannot quietly skip them.
+ip route show 2>/dev/null | grep -E 'vxlan\.calico|flannel\.1|cni0|^blackhole ' \
+  | while read -r r; do ip route del $r 2>/dev/null; done
+
+# iptables: remove the jumps out of the builtin chains FIRST — a custom chain
+# cannot be deleted while anything still references it.
+for t in filter nat mangle raw; do
+  iptables-save -t "$t" 2>/dev/null \
+    | grep -E '^-A (INPUT|OUTPUT|FORWARD|PREROUTING|POSTROUTING)' \
+    | grep -E 'cali-|KUBE-ROUTER|KUBE-POD-FW|KUBE-NWPLCY|flannel' \
+    | sed 's/^-A/-D/' \
+    | while read -r rule; do iptables -t "$t" $rule 2>/dev/null; done
+  for c in $(iptables-save -t "$t" 2>/dev/null | awk '/^:/{print substr($1,2)}' \
+             | grep -E '^(cali-|KUBE-ROUTER|KUBE-POD-FW|KUBE-NWPLCY)'); do
+    iptables -t "$t" -F "$c" 2>/dev/null
+    iptables -t "$t" -X "$c" 2>/dev/null
+  done
+done
+
+# ipsets are referenced by those rules, so they only destroy cleanly now.
+for s in $(ipset list -n 2>/dev/null | grep -E '^cali|^KUBE-'); do
+  ipset destroy "$s" 2>/dev/null
+done
+
+# State directories the k3s uninstall does not know about.
+rm -rf /var/lib/calico /var/run/calico /etc/cni/net.d/*calico* /opt/cni/bin/calico* 2>/dev/null
+echo "cni cleanup done"
+exit 0
+"""
+
+
 # --------------------------------------------------------------------------
 # Execution
 # --------------------------------------------------------------------------
@@ -120,6 +183,9 @@ def join_agent(runner: Runner, cluster: Cluster, node: Node, token: str) -> None
 
 def uninstall(runner: Runner, node: Node) -> None:
     runner.run(["bash", "-c", uninstall_script(node)], sudo=True, timeout=600)
+    # After k3s is gone, not before: the cleanup deletes interfaces and rules
+    # that k3s would otherwise be actively re-creating.
+    runner.run(["bash", "-c", cni_cleanup_script()], sudo=True, timeout=120, check=False)
 
 
 def fetch_kubeconfig(runner: Runner, cluster: Cluster) -> str:

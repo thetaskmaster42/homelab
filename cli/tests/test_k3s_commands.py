@@ -7,11 +7,11 @@ silent, hard-to-diagnose regression if dropped. Asserting the literal command
 string catches that in milliseconds.
 
 Two flags are notable by their ABSENCE, and the suite should be read with that
-in mind. `--flannel-backend=none` and `--disable-network-policy` were both here
-while Calico was the CNI. Re-adding either without restoring Calico breaks
-things quietly: the first leaves the cluster with no CNI at all, and the second
-leaves the ArgoCD chart's NetworkPolicies in the API with nothing enforcing
-them. See docs/decisions/0011-flannel-over-calico.md.
+in mind. Adding `--flannel-backend=none` leaves the cluster with no CNI at all.
+Adding `--disable-network-policy` turns off kube-router and leaves the ArgoCD
+chart's six NetworkPolicies in the API with nothing enforcing them — no error,
+no event, a policy that fails open. Both are silent.
+See docs/decisions/0011-flannel-over-calico.md.
 """
 
 from __future__ import annotations
@@ -139,3 +139,56 @@ def test_argocd_version_comes_from_cluster_config(cluster, tmp_path):
     values.write_text("{}\n")
     argv = argocd.helm_install_argv(cluster, values)
     assert argv[argv.index("--version") + 1] == cluster.spec.argocd.chartVersion
+
+
+# --------------------------------------------------------------------------
+# CNI cleanup on teardown
+# --------------------------------------------------------------------------
+
+def test_cni_cleanup_removes_the_dataplane_k3s_leaves_behind():
+    """k3s-uninstall.sh does not touch a CNI it did not install.
+
+    Measured after removing Calico: vxlan.calico still up on all three nodes,
+    stale routes including IPAM blackholes, and 1249/292/210 iptables rules
+    still loaded. A reboot clears it, but a teardown that needs a reboot to
+    finish is not a teardown.
+    """
+    script = k3s.cni_cleanup_script()
+
+    for device in ("vxlan.calico", "flannel.1", "cni0", "tunl0"):
+        assert device in script, f"{device} is not cleaned up"
+    assert "blackhole" in script, "Calico's IPAM blackhole routes are not removed"
+    assert "ipset destroy" in script
+    assert "/var/lib/calico" in script
+
+    # The jumps out of the builtin chains must go before the chains themselves,
+    # or every delete fails on "chain is still referenced".
+    assert script.index("sed 's/^-A/-D/'") < script.index("-X"), (
+        "custom chains are deleted before the rules referencing them are removed"
+    )
+
+    # Backreferences would be eaten by Python's own escape handling long before
+    # sed saw them -- \\1 is an octal escape in a non-raw string. This caught a
+    # real bug where both extractors silently matched nothing.
+    assert "\\1" not in script, "sed backreference will not survive embedding in Python"
+    assert "\x01" not in script, "a \\1 was already interpreted as an octal escape"
+
+    # A nuke must not fail because something was already gone.
+    assert "set +e" in script and script.rstrip().endswith("exit 0")
+
+
+def test_cni_cleanup_runs_after_the_uninstall_not_before(monkeypatch):
+    """Order matters: k3s actively recreates these while it is still running."""
+    calls: list[str] = []
+
+    class Recorder:
+        def run(self, argv, **kw):
+            calls.append(argv[-1])
+            return type("R", (), {"ok": True, "out": "", "stderr": ""})()
+
+    node = type("N", (), {"name": "n", "is_server": False})()
+    k3s.uninstall(Recorder(), node)
+
+    assert len(calls) == 2
+    assert "k3s-agent-uninstall.sh" in calls[0]
+    assert "cni cleanup done" in calls[1]

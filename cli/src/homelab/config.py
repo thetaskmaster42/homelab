@@ -68,32 +68,19 @@ class K3s(Strict):
 
 
 class CNI(Strict):
-    # calico  — installed by the CLI via the tigera operator, before ArgoCD exists.
-    # flannel — bundled with k3s and started by it; the CLI installs nothing.
+    # flannel — bundled inside the k3s binary and started by k3s itself.
     # none    — nothing schedules until you install a CNI yourself.
-    provider: Literal["calico", "flannel", "none"]
+    #
+    # There is no third option any more. Calico was removed in
+    # docs/decisions/0011-flannel-over-calico.md; the git history has the
+    # tigera-operator install if it is ever wanted back.
+    provider: Literal["flannel", "none"]
 
-    # Calico only. Flannel has no version of its own: it ships inside the k3s
-    # binary, so its version is k3s's version.
-    version: str = ""
-    # Calico only.
-    encapsulation: Literal["VXLAN", "IPIP", "None"] = "VXLAN"
-
-    # Flannel only, and it must agree with --flannel-backend in k3s.serverArgs:
-    # this field documents the choice, that flag enacts it. host-gw skips
-    # encapsulation entirely and is measurably cheaper, but requires every node
-    # on one L2 segment — true here, and the thing to re-check before adding a
-    # node somewhere else.
+    # Must agree with --flannel-backend in k3s.serverArgs: this field documents
+    # the choice, that flag enacts it. host-gw skips encapsulation entirely and
+    # is measurably cheaper, but needs every node on one L2 segment — true here,
+    # and the thing to re-check before adding a node somewhere else.
     backend: Literal["vxlan", "host-gw", "wireguard-native"] = "vxlan"
-
-    @model_validator(mode="after")
-    def _calico_needs_a_version(self) -> "CNI":
-        if self.provider == "calico" and not self.version:
-            raise ValueError(
-                "cni.version is required when cni.provider is 'calico' — the "
-                "tigera-operator manifest URL is built from it."
-            )
-        return self
 
 
 class ArgoCD(Strict):

@@ -187,20 +187,14 @@ def cmd_install(args) -> int:
     kubectl = kube(cluster, dry_run=args.dry_run)
 
     provider = cluster.spec.cni.provider
-    step(f"CNI: {provider} {cluster.spec.cni.version}".rstrip())
+    step(f"CNI: {provider}")
     if provider == "none":
         warn("cni.provider is 'none' — no pod will schedule until one is installed")
-    elif provider == "flannel":
+    else:
         # Nothing to apply. k3s started flannel from --flannel-backend before
-        # this process could have reached the API server.
+        # this process could have reached the API server at all.
         say(f"  bundled with k3s (backend: {cluster.spec.cni.backend}); nothing to install")
         ok("flannel is k3s's own")
-    elif cni.is_installed(kubectl) and not args.force:
-        ok("already installed")
-    else:
-        say("  applying tigera-operator, then the Installation CR (retrying for CRDs)...")
-        cni.install(kubectl, cluster)
-        ok("Calico applied")
 
     # --- agents -----------------------------------------------------------
     targets = cluster.agents

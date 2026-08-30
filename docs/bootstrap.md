@@ -40,15 +40,14 @@ k3s starts flannel itself from `--flannel-backend`, before the API server serves
 its first request, so `homelab install` applies no CNI at all. It only waits for
 `kubectl wait --for=condition=Ready node --all`.
 
-This used to be the step that could not be GitOps-managed: no pod schedules
-without a CNI, ArgoCD is a pod, so Calico had to be installed by the CLI in
-between. With flannel that constraint does not arise — see
-[ADR 0011](decisions/0011-flannel-over-calico.md). The Calico path is still in
-`steps/cni.py`, so going back is a `cluster.yaml` change.
+This used to be the step that could not be GitOps-managed — no pod schedules
+without a CNI and ArgoCD is a pod — which is why the CNI lived in the CLI. That
+constraint does not arise with a CNI that ships inside k3s. See
+[ADR 0011](decisions/0011-flannel-over-calico.md).
 
-**Note the flag that is NOT set.** `--disable-network-policy` belonged with
-Calico. Under flannel it would disable kube-router and leave the ArgoCD chart's
-six NetworkPolicies unenforced, with no error to notice.
+**Note the flag that is NOT set.** `--disable-network-policy` would turn off
+kube-router and leave the ArgoCD chart's six NetworkPolicies unenforced, with no
+error to notice.
 
 ## 3. Agents join
 

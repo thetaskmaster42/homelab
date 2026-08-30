@@ -33,18 +33,11 @@ spec:
     # because nothing relies on the default: every PVC in this repo names its
     # class explicitly, and tests/test_apps.py fails the build if one does not.
     #
-    # Two flags that USED to be here are gone, and their absence is the change:
-    #
-    #   --flannel-backend=none    kept flannel off so Calico could be the CNI.
-    #   --disable-network-policy  turned off k3s's kube-router policy controller,
-    #                             because Calico enforced NetworkPolicy instead.
-    #
-    # Dropping Calico means both must go, and the SECOND one matters more than it
-    # looks. Six NetworkPolicies ship with the ArgoCD chart and are enforced
-    # today. Removing Calico while leaving --disable-network-policy set would
-    # leave those objects in the API with nothing enforcing them: no error, no
-    # event, no warning — a policy that fails open and looks fine.
-    # See docs/decisions/0011-flannel-over-calico.md.
+    # NEVER add --disable-network-policy. It turns off k3s's kube-router, which
+    # is what enforces NetworkPolicy here. Six NetworkPolicies ship with the
+    # ArgoCD chart; without kube-router they stay in the API with nothing
+    # enforcing them — no error, no event, a policy that fails open and still
+    # lists in kubectl. See docs/decisions/0011-flannel-over-calico.md.
     serverArgs:
       - --flannel-backend=vxlan     # k3s's bundled CNI; see cni.backend below
       - --disable=servicelb         # MetalLB provides LoadBalancer IPs
@@ -52,18 +45,17 @@ spec:
       - --write-kubeconfig-mode=644
 
   cni:
-    # Flannel is started by k3s itself, so the CLI installs no CNI at all. That
-    # removes the tigera operator, calico-node, typha, the calico-apiserver and
-    # the CSI node driver — twelve pods and roughly 1GiB of RAM measured across
-    # three nodes, on hardware where that is a real fraction of the budget.
+    # Flannel is started by k3s itself, so the CLI installs no CNI at all and
+    # there is no ordering problem between the CNI and ArgoCD to solve.
     #
-    # What is given up is Calico's policy engine and its extensions
-    # (GlobalNetworkPolicy, host endpoints, eBPF dataplane), none of which this
-    # cluster used. Plain NetworkPolicy still works: k3s runs kube-router for it
-    # now that --disable-network-policy is gone.
+    # NetworkPolicy is enforced by k3s's kube-router. Test it over TCP, not
+    # ICMP: kube-router allows echo requests unconditionally, so a ping will
+    # succeed through a default-deny policy and look like a broken cluster.
     provider: flannel
-    # Must match --flannel-backend in serverArgs above. vxlan for parity with
-    # the encapsulation Calico was using, so exactly one thing changes here.
+    # Must match --flannel-backend in serverArgs above. host-gw would skip
+    # encapsulation entirely and is measurably cheaper, and every node here is
+    # on one L2 segment so it would work — re-check that before adding a node
+    # on another segment, then change both lines together.
     backend: vxlan
 
   argocd:
