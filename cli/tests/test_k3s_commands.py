@@ -1,10 +1,17 @@
 """Golden tests on the exact commands sent to the nodes.
 
-This is the highest-value suite in the CLI. The k3s flags encode four
-deliberate decisions — Calico instead of flannel, Calico policy instead of
-k3s's, MetalLB instead of servicelb, a GitOps-managed Traefik instead of the
-bundled one — and every one of them is a silent, hard-to-diagnose regression if
-dropped. Asserting the literal command string catches that in milliseconds.
+This is the highest-value suite in the CLI. The k3s flags encode three
+deliberate decisions — flannel as the CNI, MetalLB instead of servicelb, and a
+GitOps-managed Traefik instead of the bundled one — and every one of them is a
+silent, hard-to-diagnose regression if dropped. Asserting the literal command
+string catches that in milliseconds.
+
+Two flags are notable by their ABSENCE, and the suite should be read with that
+in mind. `--flannel-backend=none` and `--disable-network-policy` were both here
+while Calico was the CNI. Re-adding either without restoring Calico breaks
+things quietly: the first leaves the cluster with no CNI at all, and the second
+leaves the ArgoCD chart's NetworkPolicies in the API with nothing enforcing
+them. See docs/decisions/0011-flannel-over-calico.md.
 """
 
 from __future__ import annotations
@@ -30,8 +37,7 @@ def test_agent_install_script_matches_golden(cluster):
 @pytest.mark.parametrize(
     "flag",
     [
-        "--flannel-backend=none",     # Calico is the CNI
-        "--disable-network-policy",   # Calico enforces policy
+        "--flannel-backend=vxlan",    # k3s's bundled CNI
         "--disable=servicelb",        # MetalLB provides LoadBalancer IPs
         "--disable=traefik",          # Traefik is a config-driven Helm service
         "--write-kubeconfig-mode=644",

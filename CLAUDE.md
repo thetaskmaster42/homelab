@@ -81,17 +81,24 @@ while `values.yaml` comes from this repo via the `$values` ref. This is what let
 
 ### What cannot be GitOps-managed
 
-- **Calico (CNI)** — installed by the CLI. No pod, ArgoCD included, schedules
-  without a CNI. This chicken-and-egg is permanent.
+- **The CNI** — but only if it is a separate install. Flannel is bundled inside
+  the k3s binary and running before the API server serves, so nothing installs
+  it (see [ADR 0011](docs/decisions/0011-flannel-over-calico.md)). The
+  chicken-and-egg that made Calico CLI-owned no longer applies.
 - **ArgoCD itself** — something has to run the first install. `homelab bootstrap`
   does, and is idempotent so it doubles as break-glass recovery.
 - **The age private key and Tailscale OAuth client** — they cannot live in the
   repo they unlock. The CLI applies them at bootstrap.
 
-k3s is installed with `--flannel-backend=none --disable-network-policy
---disable=servicelb --disable=traefik`. Calico, MetalLB and a GitOps-managed
-Traefik replace those. Don't re-enable the bundled versions — two controllers
-fighting over one Deployment is the failure mode.
+k3s is installed with `--flannel-backend=vxlan --disable=servicelb
+--disable=traefik`. MetalLB and a GitOps-managed Traefik replace the bundled
+versions — don't re-enable those, two controllers fighting over one Deployment
+is the failure mode. Flannel is the exception: it IS the bundled one, and is
+used as such.
+
+**Never add `--disable-network-policy`.** It was there while Calico enforced
+policy. With flannel, it silently disables kube-router and leaves the ArgoCD
+chart's six NetworkPolicies in the API with nothing enforcing them.
 
 ## Commands
 

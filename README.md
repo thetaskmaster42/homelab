@@ -36,7 +36,7 @@ though the code is elsewhere.
 clusters/rps/cluster.yaml
         │
         ▼
-   homelab CLI ──SSH──► k3s + Calico + ArgoCD + bootstrap secrets
+   homelab CLI ──SSH──► k3s (+ its flannel) + ArgoCD + bootstrap secrets
         │
         │  (the CLI's job ends here, permanently)
         ▼
@@ -74,7 +74,7 @@ See [docs/adding-application.md](docs/adding-application.md).
 
 ```sh
 uv run homelab init      # preflight: SSH, sudo, arch, disk, clock. Mutates nothing.
-uv run homelab install   # k3s server -> Calico -> agents join
+uv run homelab install   # k3s server -> agents join (flannel comes with k3s)
 uv run homelab bootstrap # ArgoCD + bootstrap secrets + the root Application
 uv run homelab status    # node health + ArgoCD app sync state
 uv run homelab nuke --yes  # tear it all down

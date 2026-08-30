@@ -19,8 +19,7 @@ Mutates nothing, exits non-zero on any failure:
 Installed on `192.168.11.7` with:
 
 ```
---flannel-backend=none        Calico is the CNI
---disable-network-policy      Calico enforces policy instead
+--flannel-backend=vxlan       k3s's bundled CNI (ADR 0011)
 --disable=servicelb           MetalLB provides LoadBalancer IPs
 --disable=traefik             Traefik is a GitOps-managed Helm chart
 --node-ip 192.168.11.7
@@ -35,14 +34,21 @@ not have to be reissued when the operator's API proxy comes up.
 Then fetch `/etc/rancher/k3s/k3s.yaml`, rewrite `server:` to
 `https://192.168.11.7:6443`, and merge it as context `rps`.
 
-## 2. Calico — the unavoidable chicken-and-egg
+## 2. The CNI — nothing to do
 
-Apply the Tigera operator, then the `Installation` CR with the pod CIDR from
-`cluster.yaml`, retrying until the operator's CRDs register. Wait for
+k3s starts flannel itself from `--flannel-backend`, before the API server serves
+its first request, so `homelab install` applies no CNI at all. It only waits for
 `kubectl wait --for=condition=Ready node --all`.
 
-**This cannot be GitOps-managed.** No pod schedules without a CNI, and that
-includes ArgoCD. It belongs to the CLI permanently.
+This used to be the step that could not be GitOps-managed: no pod schedules
+without a CNI, ArgoCD is a pod, so Calico had to be installed by the CLI in
+between. With flannel that constraint does not arise — see
+[ADR 0011](decisions/0011-flannel-over-calico.md). The Calico path is still in
+`steps/cni.py`, so going back is a `cluster.yaml` change.
+
+**Note the flag that is NOT set.** `--disable-network-policy` belonged with
+Calico. Under flannel it would disable kube-router and leave the ArgoCD chart's
+six NetworkPolicies unenforced, with no error to notice.
 
 ## 3. Agents join
 

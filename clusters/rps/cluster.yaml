@@ -18,11 +18,11 @@ spec:
     version: v1.36.3+k3s1
     clusterCIDR: 10.42.0.0/16
     serviceCIDR: 10.43.0.0/16
-    # All five flags are load-bearing.
+    # All four flags are load-bearing.
     #
     # local-storage is deliberately NOT disabled, though it was briefly. k3s's
-    # bundled local-path provisioner is what backs Prometheus and OpenBao, which
-    # must keep working when the NAS does not — see
+    # bundled local-path provisioner is what backs Prometheus, Grafana and
+    # OpenBao, which must keep working when the NAS does not — see
     # docs/decisions/0008-local-disk-for-observability-and-secrets.md.
     #
     # The consequence is that k3s marks local-path as a default StorageClass and
@@ -32,17 +32,39 @@ spec:
     # object. So `nfs` is default too, and TWO defaults exist. That is safe only
     # because nothing relies on the default: every PVC in this repo names its
     # class explicitly, and tests/test_apps.py fails the build if one does not.
+    #
+    # Two flags that USED to be here are gone, and their absence is the change:
+    #
+    #   --flannel-backend=none    kept flannel off so Calico could be the CNI.
+    #   --disable-network-policy  turned off k3s's kube-router policy controller,
+    #                             because Calico enforced NetworkPolicy instead.
+    #
+    # Dropping Calico means both must go, and the SECOND one matters more than it
+    # looks. Six NetworkPolicies ship with the ArgoCD chart and are enforced
+    # today. Removing Calico while leaving --disable-network-policy set would
+    # leave those objects in the API with nothing enforcing them: no error, no
+    # event, no warning — a policy that fails open and looks fine.
+    # See docs/decisions/0011-flannel-over-calico.md.
     serverArgs:
-      - --flannel-backend=none      # Calico is the CNI
-      - --disable-network-policy    # Calico enforces policy instead
+      - --flannel-backend=vxlan     # k3s's bundled CNI; see cni.backend below
       - --disable=servicelb         # MetalLB provides LoadBalancer IPs
       - --disable=traefik           # Traefik is a GitOps-managed Helm chart
       - --write-kubeconfig-mode=644
 
   cni:
-    provider: calico
-    version: v3.29.1
-    encapsulation: VXLAN
+    # Flannel is started by k3s itself, so the CLI installs no CNI at all. That
+    # removes the tigera operator, calico-node, typha, the calico-apiserver and
+    # the CSI node driver — twelve pods and roughly 1GiB of RAM measured across
+    # three nodes, on hardware where that is a real fraction of the budget.
+    #
+    # What is given up is Calico's policy engine and its extensions
+    # (GlobalNetworkPolicy, host endpoints, eBPF dataplane), none of which this
+    # cluster used. Plain NetworkPolicy still works: k3s runs kube-router for it
+    # now that --disable-network-policy is gone.
+    provider: flannel
+    # Must match --flannel-backend in serverArgs above. vxlan for parity with
+    # the encapsulation Calico was using, so exactly one thing changes here.
+    backend: vxlan
 
   argocd:
     chartVersion: "10.4.0"

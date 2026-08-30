@@ -1,9 +1,16 @@
-"""Calico.
+"""The CNI, for the providers the CLI has to install itself.
 
-This is the one thing that can never be GitOps-managed. No pod schedules without
-a CNI, and ArgoCD is a pod — so the CNI must be in place before the thing that
-manages everything else exists. That chicken-and-egg is permanent, and it is why
-this module lives in the CLI rather than in infra/services/.
+No pod schedules without a CNI, and ArgoCD is a pod — so the CNI must exist
+before the thing that manages everything else does. That chicken-and-egg is
+permanent, and it is why this module lives in the CLI rather than in
+infra/services/.
+
+It only bites for a CNI that is a separate install. `flannel` is bundled inside
+the k3s binary and started by k3s before the API server is serving, so there is
+nothing here to do and `install()` returns immediately — the chicken-and-egg
+does not arise at all. That is the current provider; see
+docs/decisions/0011-flannel-over-calico.md. The Calico path below is kept
+because reversing that decision should be a config change, not a rewrite.
 """
 
 from __future__ import annotations
@@ -58,7 +65,9 @@ def is_installed(runner: Runner) -> bool:
 
 
 def install(runner: Runner, cluster: Cluster, *, attempts: int = 30, delay: int = 5) -> None:
-    if cluster.spec.cni.provider == "none":
+    # flannel needs no install step: k3s brings it up itself from
+    # --flannel-backend, before this code could run anyway.
+    if cluster.spec.cni.provider in ("none", "flannel"):
         return
 
     runner.run(
