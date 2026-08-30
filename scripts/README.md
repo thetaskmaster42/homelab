@@ -11,6 +11,7 @@ about how these Pis fail, and that is the expensive thing to rediscover.
 | Script | Runs on | What it does |
 |---|---|---|
 | `bump-app-version.sh` | the laptop | Repins an application's image tag in `apps/*/kustomization.yaml`, refusing anything that would not deploy |
+| `openbao-configure.sh` | the laptop | One-time OpenBao setup (audit, KV v2, Kubernetes auth), and per-application roles |
 | `collect-crash-evidence.sh` | the laptop | Waits for a dead node to answer, then captures the *previous* boot's journal before it rolls over |
 | `net-watchdog.sh` | a node | Detects the link-up-but-no-traffic blackhole and escalates: bounce the interface, then reboot |
 
@@ -98,3 +99,45 @@ OUT_DIR=~/crash WAIT_SECONDS=3600 ./collect-crash-evidence.sh
 # Run the watchdog on a node (foreground; needs root for `ip link` and reboot)
 sudo PROBE_IPS="192.168.11.1 192.168.11.3" FAIL_THRESHOLD=6 ./net-watchdog.sh
 ```
+
+## openbao-configure.sh
+
+```sh
+read -rs BAO_TOKEN && export BAO_TOKEN      # paste the root token; no echo
+./scripts/openbao-configure.sh platform
+./scripts/openbao-configure.sh app docmost docmost docmost
+unset BAO_TOKEN
+```
+
+**The token goes in over stdin, never as an argument.** Anything in argv is
+visible in `ps` inside the container while the command runs, and lands in shell
+history on the way in.
+
+Idempotent by design. `homelab nuke` destroys OpenBao's volume — it is on
+`local-path` per [ADR 0008](../docs/decisions/0008-local-disk-for-observability-and-secrets.md)
+— so re-running this after a rebuild is the expected path, not an edge case.
+
+It refuses to do anything while OpenBao is sealed or uninitialised, and prints
+the command that fixes it.
+
+### Three decisions embedded in it
+
+**Audit goes to stdout, not a file.** If every audit device fails, OpenBao stops
+serving rather than serving unaudited — so a file device on a full 2Gi
+`local-path` volume is an outage waiting to happen. stdout cannot fill the
+volume and is already collected.
+
+**Policies are written against `secret/data/<path>`, not `secret/<path>`.** KV v2
+rewrites read paths, so a policy on `secret/foo` matches nothing and every read
+is denied with no hint why. This is the most common KV v2 mistake.
+
+**`bound_service_account_names` is never `*`.** That would let any pod in the
+namespace assume the role, which discards most of the value of using the
+ServiceAccount as the identity.
+
+### Revoking root
+
+`platform` writes an `admin` policy but does **not** revoke the root token. Set
+up a `userpass` admin, verify you can actually log in with it, and only then
+revoke root. Regenerate it on demand with `bao operator generate-root` when
+genuinely needed rather than storing it.
