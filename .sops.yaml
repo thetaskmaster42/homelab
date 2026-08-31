@@ -11,6 +11,19 @@
 # ~/.config/sops/age/keys.txt and in the cluster as a Secret the CLI installs at
 # bootstrap. It is the one thing that can never be in this repo.
 creation_rules:
+  # OpenBao's unseal keys and root token. FIRST, because sops takes the first
+  # matching rule and the generic one below would otherwise claim this file and
+  # encrypt nothing in it -- these keys are not under `data`/`stringData`.
+  #
+  # This file is NOT applied to the cluster. It is read only by the CLI, to
+  # unseal after a rebuild. Storing it here is a deliberate trade recorded in
+  # docs/decisions/0013-automated-openbao-init.md: it makes the age key the
+  # single root of trust, in exchange for a rebuild that needs no human.
+  - path_regex: openbao-unseal\.enc\.yaml$
+    encrypted_regex: '^(unsealKeys|rootToken)$'
+    age: >-
+      age1zfjcwgz8ktj6yzq8x2j9atygvm65wvr24f5d3zlqwtykr5nduqtsuau7an
+
   - path_regex: \.enc\.yaml$
     encrypted_regex: '^(data|stringData)$'
     age: >-
