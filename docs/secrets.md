@@ -1,14 +1,32 @@
 # Secrets
 
-Two tiers, with one rule for choosing between them:
+SOPS+age, and nothing else. See
+[ADR 0014](decisions/0014-sops-as-the-only-secret-manager.md).
 
-> **If ArgoCD needs it to bring the platform up, it is SOPS. If an application
-> reads it while running, it is OpenBao.**
+The order to reach for things, best first:
 
-OpenBao starts sealed after every restart, so nothing on the path to a working
-cluster may depend on it. That is why the platform's own credentials are
-SOPS-encrypted in git rather than stored in the secret manager. See
-[ADR 0004](decisions/0004-two-tier-secrets.md).
+> **1. Let an operator generate it.** CloudNativePG creates its own database
+> passwords into a Secret; nobody chooses them and nobody writes them down. If
+> the component can do this, that is the answer.
+>
+> **2. Otherwise, SOPS.** Encrypt it into
+> `clusters/<name>/bootstrap-secrets.enc.yaml` and have the chart reference it
+> with `existingSecret`.
+>
+> **3. Never let a chart generate its own.** A chart that calls `randAlphaNum`
+> produces a fresh value on every render, and ArgoCD re-renders on every
+> refresh — under `automated` + `selfHeal` that is a pod restarting every few
+> minutes, forever. `tests/test_render_determinism.py` catches this class of
+> bug; the Grafana admin password is the worked example.
+
+This repository is public, and ArgoCD reads its desired state from git, so
+anything ArgoCD consumes has to be encrypted at rest. That is the whole reason
+SOPS is here.
+
+There is deliberately no runtime secret manager. One was built — see the
+`feature-openboa` branch — and removed because no application ever read a secret
+from it. The bar for bringing it back is a workload that genuinely needs
+short-lived dynamic credentials, not a plan for one.
 
 ## One-time setup
 

@@ -10,9 +10,9 @@
 #
 # Application data lands here -- cloudnative-pg, prep-tracker's database,
 # rh-dashboard -- because it is the data that is not reconstructible and that
-# `homelab nuke` must not be able to erase. The monitoring stack and OpenBao
-# deliberately do NOT: their state is reconstructible, and they are precisely
-# what must keep working when the NAS does not. That split is argued in
+# `homelab nuke` must not be able to erase. The monitoring stack deliberately
+# does NOT: its state is reconstructible, and it is precisely what must keep
+# working when the NAS does not. That split is argued in
 # docs/decisions/0008-local-disk-for-observability-and-secrets.md.
 #
 # The cost of everything else being here is concentration: this Application and

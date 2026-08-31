@@ -1,6 +1,10 @@
 # 0008 — Local disk for Prometheus and OpenBao
 
-**Status:** accepted, 2026-08-26
+**Status:** accepted, 2026-08-26 — **partially overtaken.** OpenBao was removed
+in [ADR 0014](0014-sops-as-the-only-secret-manager.md), so half of what this
+ADR placed on local disk no longer exists. The reasoning for the monitoring
+stack stands unchanged, and the reconstructibility argument it introduces is
+still the rule for deciding where a volume belongs.
 **Amends:** [ADR 0006](0006-nfs-default-storage.md), which made `nfs` the default
 *and only* StorageClass. The "only" half is reversed here; the default half stands.
 

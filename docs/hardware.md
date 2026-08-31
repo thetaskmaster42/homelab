@@ -47,7 +47,7 @@ So there are two StorageClasses, split by whether the data can be rebuilt:
 | Class | Backed by | Holds |
 |---|---|---|
 | `nfs` (default) | `portal:/export/kubernetes-nfs-storage` | application + database data; `reclaimPolicy: Retain`, RWX-capable, `hard` mounts |
-| `local-path` (also default) | node-local disk, via k3s's bundled addon | Prometheus, Grafana and OpenBao — reconstructible, and must survive a NAS outage |
+| `local-path` (also default) | node-local disk, via k3s's bundled addon | Prometheus and Grafana — reconstructible, and must survive a NAS outage |
 
 **Both are marked default.** k3s re-applies its `local-path` addon on every server
 start and marks it default; overriding that would mean two controllers fighting
@@ -58,7 +58,7 @@ the build if one does not.
 
 `reclaimPolicy: Retain` exists precisely so that a cluster rebuild cannot
 destroy the data. The trade this makes — NFS under PostgreSQL, Prometheus and
-OpenBao, all of which would rather have local `fsync` — is argued in full in
+all of which would rather have local `fsync` — is argued in full in
 [ADR 0006](decisions/0006-nfs-default-storage.md). Read it before moving
 anything back.
 
@@ -85,7 +85,7 @@ real cause.
 
 Because `portal` is a single un-replicated NAS, it is a hard dependency for every
 workload on the `nfs` class — which is all application and database data.
-The monitoring stack and OpenBao are deliberately not on it
+The monitoring stack is deliberately not on it
 ([ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)), so
 metrics, dashboards and secrets all keep working through a NAS outage — you can
 see the failure and deploy your way out of it.

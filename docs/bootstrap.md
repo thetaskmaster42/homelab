@@ -78,8 +78,9 @@ Decrypted with the local age key and applied directly:
    render and would restart Grafana on every sync
 4. a GHCR pull secret, only if a package ever goes private
 
-Each of these exists here rather than in OpenBao for the same reason: they are
-needed to bring the platform up, and OpenBao starts sealed.
+Each of these is SOPS-encrypted because this repository is public and ArgOCD
+reads its desired state from git. See
+[ADR 0014](decisions/0014-sops-as-the-only-secret-manager.md).
 
 This is the root of the chain of trust: one key on your laptop unlocks a public
 repository full of encrypted values.
@@ -111,13 +112,12 @@ it removes a whole class of ordering bugs that explicit sequencing would create.
 `k3s-uninstall.sh` on the server, `k3s-agent-uninstall.sh` on the agents. These
 are different scripts; using the wrong one leaves a broken install behind.
 
-**Application data survives this; Prometheus and OpenBao do not.** PVCs on the
+**Application data survives this; the monitoring stack does not.** PVCs on the
 `nfs` class use `reclaimPolicy: Retain`, so a nuke leaves them on `portal`
-untouched. Prometheus and OpenBao are on `local-path`
+untouched. Prometheus and Grafana are on `local-path`
 ([ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)), which
 lives under `/var/lib/rancher/k3s/storage` and is erased outright — expect to
-re-initialise and re-seed OpenBao, and to start metrics from empty, after every
-rebuild. `nuke` lists the PVCs on each side and requires explicit confirmation.
+start metrics from empty after every rebuild. `nuke` lists the PVCs on each side and requires explicit confirmation.
 
 Surviving is not the same as coming back. `Retain` leaves each PV behind in
 `Released`, and a rebuilt cluster provisions *fresh* directories rather than

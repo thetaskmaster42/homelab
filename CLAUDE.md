@@ -23,8 +23,8 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
 - **Two StorageClasses, and TWO defaults.** `nfs` (on `portal`, 192.168.11.3)
-  holds application data; k3s's `local-path` holds the monitoring stack and
-  OpenBao, which must survive a NAS outage. k3s marks `local-path` default and cannot be stopped
+  holds application data; k3s's `local-path` holds the monitoring stack, which
+  must survive a NAS outage. k3s marks `local-path` default and cannot be stopped
   from doing so, so a PVC naming no class resolves *arbitrarily*. **Every PVC
   must name its class explicitly** — `tests/test_apps.py` fails the build
   otherwise. See [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and

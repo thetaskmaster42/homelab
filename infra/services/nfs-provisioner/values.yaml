@@ -14,7 +14,7 @@ nfs:
     - nfsvers=4.1
     # `hard`, not `soft`: a soft mount returns EIO to the application when the
     # NAS is slow, and every workload on this class (Postgres, Prometheus TSDB,
-    # OpenBao's file backend) treats a short read/write as corruption rather
+    # the Prometheus TSDB) treats a short read/write as corruption rather
     # than as a retryable error. Blocking is the safe failure mode; losing data
     # quietly is not.
     - hard
@@ -31,7 +31,7 @@ nfs:
 storageClass:
   name: nfs
   # Default for applications -- but NOT the only default, and not the only class.
-  # k3s's bundled local-path is back for Prometheus and OpenBao (ADR 0008) and
+  # k3s's bundled local-path is back for the monitoring stack (ADR 0008) and
   # marks itself default in a way we cannot override without two controllers
   # fighting over one object. So both are flagged default.
   #

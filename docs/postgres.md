@@ -67,7 +67,7 @@ This cluster used to run on `local-path`, and the argument for that was sound:
 
 [ADR 0006](decisions/0006-nfs-default-storage.md) overrode it. `local-path` does
 still exist — [ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)
-brought it back for Prometheus and OpenBao — but database data deliberately stays
+brought it back for the monitoring stack — but database data deliberately stays
 on `nfs`. `homelab nuke` erases every `local-path` volume, and application data is
 the one thing here that cannot be reconstructed.
 
@@ -166,11 +166,17 @@ tables, and `DROP` blast radius is one database.
 namespace that needs it. Quick, but every app then shares one role with rights
 over the whole `app` database, and rotation has to fan out.
 
-**3. Dynamic credentials from OpenBao.** OpenBao's database secrets engine issues
-a short-lived PostgreSQL role per application on demand and revokes it on expiry.
-Nothing static is stored anywhere, and rotation stops being an event.
-[ADR 0004](decisions/0004-two-tier-secrets.md) names this as where the two-tier
-secret design is heading; it is the reason OpenBao is deployed at all.
+**3. Dynamic credentials from a secret manager.** A database secrets engine
+issues a short-lived PostgreSQL role per application on demand and revokes it on
+expiry. Nothing static is stored anywhere and rotation stops being an event.
+
+This is the best answer and is **not currently available**: OpenBao was deployed
+for exactly this and removed without ever being used, because no application had
+reached the point of needing it. See
+[ADR 0014](decisions/0014-sops-as-the-only-secret-manager.md). A working,
+automated implementation is preserved on the `feature-openboa` branch, and an
+application that genuinely needs per-role credentials is the thing that should
+bring it back.
 
 Until one of these is in place, credentials stay as the operator-generated
 `postgres-app` Secret. Note that `prep-tracker` does not consume this shared

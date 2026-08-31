@@ -7,7 +7,7 @@ that one manual step.
 
 Deliberately narrow. A secret belongs here only if the platform cannot reach a
 working state without it. Anything an application reads at runtime belongs in
-OpenBao instead, which starts sealed and so can never be on this path. See
+ArgoCD works at all. Everything else is an ordinary Kubernetes Secret. See
 docs/decisions/0004-two-tier-secrets.md.
 """
 

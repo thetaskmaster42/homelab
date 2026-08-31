@@ -21,8 +21,8 @@ spec:
     # All four flags are load-bearing.
     #
     # local-storage is deliberately NOT disabled, though it was briefly. k3s's
-    # bundled local-path provisioner is what backs Prometheus, Grafana and
-    # OpenBao, which must keep working when the NAS does not — see
+    # bundled local-path provisioner is what backs Prometheus and Grafana,
+    # which must keep working when the NAS does not — see
     # docs/decisions/0008-local-disk-for-observability-and-secrets.md.
     #
     # The consequence is that k3s marks local-path as a default StorageClass and

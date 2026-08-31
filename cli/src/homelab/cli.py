@@ -19,7 +19,7 @@ from . import state as state_mod
 from .config import Cluster, Node
 from .errors import AuthError, HomelabError, Unreachable
 from .runner import LocalRunner, Runner, SSHRunner
-from .steps import argocd, cni, k3s, openbao, preflight, prereqs, secrets, tailnet
+from .steps import argocd, cni, k3s, preflight, prereqs, secrets, tailnet
 
 DEFAULT_CLUSTER = "rps"
 
@@ -306,9 +306,6 @@ def cmd_bootstrap(args) -> int:
     _apply_bootstrap_secrets(kubectl, cluster, root, args.dry_run)
 
     if not args.dry_run:
-        _ensure_openbao(kubectl, cluster, root, wait=int(getattr(args, "openbao_wait", 420)))
-
-    if not args.dry_run:
         step("Access")
         password = argocd.initial_password(kubectl)
         if password:
@@ -316,55 +313,6 @@ def cmd_bootstrap(args) -> int:
             say("  (delete the argocd-initial-admin-secret once you have changed it)")
         say("  kubectl -n argocd port-forward svc/argocd-server 8080:443")
 
-    return 0
-
-
-def _ensure_openbao(kubectl, cluster, root, *, wait: int) -> None:
-    """Initialise and unseal OpenBao, once ArgoCD has actually created the pod.
-
-    This cannot run earlier in bootstrap: OpenBao is deployed BY ArgoCD, so at
-    the moment the root Application is applied the pod does not exist yet. Hence
-    the wait, and hence the graceful give-up — a slow first sync must not fail a
-    bootstrap that otherwise succeeded.
-    """
-    step("OpenBao")
-    deadline = time.monotonic() + wait
-    while time.monotonic() < deadline:
-        try:
-            if openbao.pod_ready(kubectl):
-                break
-        except HomelabError:
-            pass
-        time.sleep(10)
-    else:
-        warn(f"pod did not appear within {wait}s — run `homelab openbao` once it has")
-        return
-
-    try:
-        say(f"  {openbao.ensure(kubectl, root, cluster.name)}")
-        ok("ready")
-    except HomelabError as exc:
-        warn(str(exc).splitlines()[0][:200])
-        say("  re-run with `homelab openbao` once the cause is fixed")
-
-
-def cmd_openbao(args) -> int:
-    """Initialise and/or unseal OpenBao. Idempotent; safe to re-run."""
-    cluster = load_cluster(args)
-    kubectl = kube(cluster, dry_run=args.dry_run)
-    root = repo_root()
-
-    step("OpenBao")
-    if not openbao.pod_ready(kubectl):
-        bad("the openbao pod is not Running — is ArgoCD synced?")
-        return 1
-    try:
-        say(f"  {openbao.ensure(kubectl, root, cluster.name)}")
-    except HomelabError as exc:
-        bad(str(exc))
-        return 1
-    ok("ready")
-    say(f"  configure it with:  ./scripts/openbao-configure.sh platform")
     return 0
 
 
@@ -645,15 +593,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("bootstrap", help="install ArgoCD and apply the root Application")
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument(
-        "--openbao-wait", type=int, default=420, metavar="SECONDS",
-        help="how long to wait for ArgoCD to produce the openbao pod (default 420)",
-    )
     p.set_defaults(func=cmd_bootstrap)
-
-    p = sub.add_parser("openbao", help="initialise and unseal OpenBao (idempotent)")
-    p.add_argument("--dry-run", action="store_true")
-    p.set_defaults(func=cmd_openbao)
 
     p = sub.add_parser("status", help="node and ArgoCD application health")
     p.set_defaults(func=cmd_status)

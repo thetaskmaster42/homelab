@@ -1,6 +1,15 @@
 # 0004 — Two tiers of secret: SOPS+age in git, OpenBao at runtime
 
-**Status:** accepted, 2026-08-17
+**Status:** **superseded** by [ADR 0014](0014-sops-as-the-only-secret-manager.md), 2026-08-31.
+
+> The second tier was built and never used: no application ever read a
+> secret from OpenBao. Automating its unseal then put the unseal keys in
+> SOPS, making its protection at rest equal to the first tier's rather
+> than better. SOPS+age is now the only secret manager. The reasoning
+> below is kept because it is still the right argument for a cluster that
+> has a runtime-secret consumer — this one does not.
+
+**Originally accepted:** 2026-08-17
 
 ## Context
 

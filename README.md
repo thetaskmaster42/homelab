@@ -88,18 +88,19 @@ Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.m
 - **Every image must have a `linux/arm64` manifest.** There is no amd64 node.
   CI checks this against rendered manifests, so an amd64-only image fails a PR
   rather than CrashLooping on a Pi.
-- **This repository is public.** Secrets come in two tiers: SOPS+age for the
-  bootstrap credentials that must live in git, OpenBao for what applications
-  read at runtime. CI fails on any plaintext secret. See
-  [ADR 0004](docs/decisions/0004-two-tier-secrets.md).
+- **This repository is public.** Secrets are SOPS+age encrypted in
+  `clusters/<name>/bootstrap-secrets.enc.yaml`, and CI fails on any plaintext
+  one. Better still is a credential nobody writes down: CloudNativePG generates
+  the database passwords itself. See
+  [ADR 0014](docs/decisions/0014-sops-as-the-only-secret-manager.md).
 - **Applications share one PostgreSQL**, run by the CloudNativePG operator in
   the `databases` namespace — a database and role per app, not a database per
   app.
 - **Storage splits by whether the data can be rebuilt.** Application and database
   data goes on `nfs` (the `portal` NAS) so it survives node loss and
-  `homelab nuke`. The monitoring stack and OpenBao stay on node-local `local-path`,
-  because they are reconstructible and are precisely what must keep working when
-  the NAS does not. Both classes are marked default, so **every PVC names
+  `homelab nuke`. The monitoring stack stays on node-local `local-path`, because
+  it is reconstructible and is precisely what must keep working when the NAS
+  does not. Both classes are marked default, so **every PVC names
   its class explicitly** and CI enforces it. See
   [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and
   [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md).
