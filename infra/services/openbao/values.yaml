@@ -28,6 +28,40 @@ server:
       # than appearing as a new peer to the raft log.
       setNodeId: true
 
+      # The chart's default config, plus an audit stanza.
+      #
+      # Audit devices CANNOT be enabled through the API in OpenBao 2.x -- the
+      # attempt returns "cannot enable audit device via API; use declarative,
+      # config-based audit device management instead". They are config-file
+      # only, created on the active node at start and on SIGHUP. So this has to
+      # live here rather than in scripts/openbao-configure.sh.
+      #
+      # stdout rather than a file, deliberately: if EVERY audit device fails,
+      # OpenBao stops serving rather than serving unaudited. A file device on a
+      # full 2Gi local-path volume would therefore become an outage. The pod log
+      # cannot fill the volume and is already collected.
+      config: |
+        ui = true
+
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+        storage "raft" {
+          path = "/openbao/data"
+        }
+
+        service_registration "kubernetes" {}
+
+        audit "file" "stdout" {
+          description = "Audit log to the pod's stdout"
+          options {
+            file_path = "stdout"
+          }
+        }
+
     disruptionBudget:
       # Disabled, and NOT because disruption budgets are unwanted.
       #

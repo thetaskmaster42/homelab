@@ -25,9 +25,24 @@ ok()   { printf '\033[32m%s\033[0m\n' "$*"; }
 [ -n "${BAO_TOKEN:-}" ] || die "BAO_TOKEN is not set. Use: read -rs BAO_TOKEN && export BAO_TOKEN"
 
 # Run a script inside the pod with BAO_TOKEN supplied on stdin.
+#
+# The script goes in ARGV and the token on STDIN, and that split is the whole
+# point. `sh -s` reads its *script* from stdin, so piping the token there too
+# made the first line execute as a command -- the token itself became a failed
+# `sh: <token>: not found`, BAO_TOKEN stayed empty, and every call came back
+# 403. The script is not secret; the token is, and argv is visible in `ps`
+# inside the container.
+#
+# $1 is the script text; further arguments are passed through as $2.. to it.
 bao_exec() {
-  { printf '%s\n' "$BAO_TOKEN"; cat; } \
-    | kubectl -n "$NS" exec -i "$POD" -- sh -s
+  local script="$1"; shift
+  printf '%s\n' "$BAO_TOKEN" | kubectl -n "$NS" exec -i "$POD" -- sh -c '
+read -r BAO_TOKEN
+export BAO_TOKEN
+export BAO_ADDR="${BAO_ADDR:-http://127.0.0.1:8200}"
+script="$1"; shift
+eval "$script"
+' _ "$script" "$@"
 }
 
 preflight() {
@@ -40,20 +55,19 @@ preflight() {
 
 platform() {
   preflight
-  bao_exec <<'REMOTE'
-read -r BAO_TOKEN; export BAO_TOKEN
-export BAO_ADDR="${BAO_ADDR:-http://127.0.0.1:8200}"
+  bao_exec "$(cat <<'REMOTE'
 set -e
 
-# Audit to STDOUT rather than a file, deliberately. If every audit device fails,
-# OpenBao stops serving rather than serving unaudited -- so a file device on a
-# full 2Gi local-path volume becomes an outage. stdout lands in the pod log,
-# which cannot fill the volume and is already collected.
-if ! bao audit list -format=json 2>/dev/null | grep -q '"stdout/"'; then
-  bao audit enable -path=stdout file file_path=stdout
-  echo "audit: enabled -> stdout"
+# Audit devices are NOT enabled here, and cannot be: OpenBao 2.x refuses to
+# create them through the API ("use declarative, config-based audit device
+# management instead"). The stanza lives in infra/services/openbao/values.yaml
+# and is applied at start-up. This only reports what is actually active, because
+# an unaudited secret store that looks configured is worse than one that
+# obviously is not.
+if bao audit list 2>/dev/null | grep -q .; then
+  echo "audit: active -> $(bao audit list -format=json 2>/dev/null | head -c 120)"
 else
-  echo "audit: already enabled"
+  echo "audit: NONE ACTIVE -- check the audit stanza in the openbao values"
 fi
 
 # KV v2 for versioning and soft-delete: a bad write is recoverable rather than
@@ -87,6 +101,7 @@ path "*" {
 POLICY
 echo "policy: admin written"
 REMOTE
+)"
   ok "platform configured"
   cat <<'NEXT'
 
@@ -109,12 +124,9 @@ app() {
   e.g. $0 app docmost docmost docmost"
   local name="$1" ns="$2" sa="$3"
   preflight
-  { printf '%s\n%s\n%s\n%s\n' "$BAO_TOKEN" "$name" "$ns" "$sa"; } \
-    | kubectl -n "$NS" exec -i "$POD" -- sh -s <<'REMOTE'
-read -r BAO_TOKEN; export BAO_TOKEN
-read -r NAME; read -r NS; read -r SA
-export BAO_ADDR="${BAO_ADDR:-http://127.0.0.1:8200}"
+  bao_exec "$(cat <<'REMOTE'
 set -e
+NAME="$1"; NS="$2"; SA="$3"
 
 # NOTE THE PATH. KV v2 rewrites reads to secret/data/<path>, so a policy written
 # against secret/<path> silently matches nothing and every read is denied with
@@ -139,6 +151,7 @@ bao write "auth/kubernetes/role/$NAME" \
 
 echo "app '$NAME': policy + role bound to $NS/$SA, read on secret/$NAME/*"
 REMOTE
+)" "$name" "$ns" "$sa"
   ok "role created"
   echo "  seed with:  kubectl -n $NS exec -it $POD -- bao kv put secret/$1/config key=value"
 }
