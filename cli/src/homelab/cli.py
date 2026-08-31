@@ -19,7 +19,7 @@ from . import state as state_mod
 from .config import Cluster, Node
 from .errors import AuthError, HomelabError, Unreachable
 from .runner import LocalRunner, Runner, SSHRunner
-from .steps import argocd, cni, k3s, preflight, prereqs, secrets
+from .steps import argocd, cni, k3s, preflight, prereqs, secrets, tailnet
 
 DEFAULT_CLUSTER = "rps"
 
@@ -408,12 +408,73 @@ def cmd_status(args) -> int:
             bad(line)
         else:
             warn(line)
+
+    # The operator cannot be told "do not provision if the name is taken" — it
+    # always registers a device, and on a collision it silently appends a digit.
+    # `argocd-1` resolves and serves, so nothing looks broken; it is just that
+    # every documented URL now points at the wrong place. Surfacing it here is
+    # the difference between noticing in seconds and noticing in a week.
+    step("Tailnet devices")
+    try:
+        path = secrets.bootstrap_file(repo_root(), cluster.name)
+        creds = tailnet.oauth_from_bundle(secrets.decrypt(LocalRunner(), path)) if path.is_file() else None
+        if creds is None:
+            say("  no operator-oauth in the bundle — skipping")
+        else:
+            devices = tailnet.cluster_devices(tailnet.access_token(*creds))
+            odd = set(tailnet.suffixed(devices))
+            if not devices:
+                say("  none registered")
+            for d in devices:
+                name = d.get("hostname", "?")
+                if name in odd:
+                    bad(f"{name:<26} name collision — the un-suffixed name was still taken")
+                else:
+                    ok(f"{name:<26} {','.join(t.replace('tag:', '') for t in (d.get('tags') or []))}")
+            if odd:
+                warn("  run `homelab nuke` before the next rebuild, or delete these in the admin console")
+    except Exception as exc:  # noqa: BLE001 - status must never fail on a side check
+        warn(f"could not query the tailnet — {type(exc).__name__}")
     return 0
 
 
 # --------------------------------------------------------------------------
 # nuke
 # --------------------------------------------------------------------------
+
+def _nuke_tailnet_devices(cluster, *, dry_run: bool) -> None:
+    """Delete the tailnet devices this cluster registered."""
+    path = secrets.bootstrap_file(repo_root(), cluster.name)
+    if not path.is_file():
+        say("  no bootstrap bundle — nothing to clean up")
+        return
+    plaintext = secrets.decrypt(LocalRunner(dry_run=False), path)
+    creds = tailnet.oauth_from_bundle(plaintext)
+    if creds is None:
+        say("  no operator-oauth in the bundle — skipping")
+        return
+
+    token = tailnet.access_token(*creds)
+    devices = tailnet.cluster_devices(token)
+    if not devices:
+        ok("no cluster devices registered")
+        return
+
+    odd = tailnet.suffixed(devices)
+    if odd:
+        warn(f"  collision artefacts present, which is the symptom this prevents: {', '.join(odd)}")
+
+    for d in devices:
+        name = d.get("hostname", d.get("id", "?"))
+        if dry_run:
+            say(f"  would delete {name}")
+            continue
+        try:
+            tailnet.delete_device(token, d["id"])
+            ok(f"deleted {name}")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"  {name}: {type(exc).__name__} — left to expire")
+
 
 def cmd_nuke(args) -> int:
     cluster = load_cluster(args)
@@ -483,6 +544,24 @@ def cmd_nuke(args) -> int:
         if kc.exists() and not args.dry_run:
             kc.unlink()
             ok(f"removed {kc}")
+
+        # The Tailscale operator registers a tailnet device per exposed Ingress.
+        # Killing the pods does not log them out, and although the devices are
+        # ephemeral and expire on their own, rebuilding inside that window means
+        # the operator finds `argocd` still taken and registers `argocd-1`. Every
+        # URL then quietly points somewhere that no longer resolves.
+        #
+        # Never fatal. A nuke that failed because an external API was down would
+        # leave the cluster half-removed, which is worse than a few stale devices
+        # that expire by themselves.
+        step("Tailnet devices")
+        try:
+            _nuke_tailnet_devices(cluster, dry_run=args.dry_run)
+        except HomelabError as exc:
+            warn(str(exc).splitlines()[0][:160])
+        except Exception as exc:  # noqa: BLE001 - teardown must not be brittle
+            warn(f"could not reach the Tailscale API — {type(exc).__name__}: "
+                 f"{str(exc)[:100]}. Devices will expire on their own.")
     if not args.dry_run:
         state_mod.save(repo_root(), state)
     say("\nRebuild with:  homelab install && homelab bootstrap")

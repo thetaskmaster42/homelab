@@ -192,3 +192,53 @@ def test_cni_cleanup_runs_after_the_uninstall_not_before(monkeypatch):
     assert len(calls) == 2
     assert "k3s-agent-uninstall.sh" in calls[0]
     assert "cni cleanup done" in calls[1]
+
+
+# --------------------------------------------------------------------------
+# Tailnet device cleanup
+# --------------------------------------------------------------------------
+
+def test_tailnet_cleanup_never_touches_devices_it_did_not_create():
+    """The filter is the only thing standing between a teardown and deleting
+    the operator's own laptop out of the tailnet."""
+    from homelab.steps import tailnet
+
+    devices = [
+        {"hostname": "rps-edge", "tags": None},            # the laptop
+        {"hostname": "Rohin-MacBook", "tags": []},         # a personal machine
+        {"hostname": "portal", "tags": ["tag:nas"]},       # tagged, but not ours
+        {"hostname": "argocd", "tags": ["tag:k8s"]},
+        {"hostname": "rps-k8s-operator", "tags": ["tag:k8s-operator"]},
+    ]
+    selected = [d["hostname"] for d in devices
+                if tailnet.CLUSTER_TAGS & set(d.get("tags") or ())]
+
+    assert selected == ["argocd", "rps-k8s-operator"]
+    for safe in ("rps-edge", "Rohin-MacBook", "portal"):
+        assert safe not in selected, f"{safe} would have been deleted"
+
+
+def test_tailnet_reports_collision_artefacts_without_acting_on_them():
+    """A `-1` suffix is the symptom being prevented, but a hostname genuinely
+    ending in a digit is legal — so these are reported, never auto-deleted."""
+    from homelab.steps import tailnet
+
+    devices = [
+        {"hostname": "argocd"}, {"hostname": "argocd-1"},
+        {"hostname": "grafana-2"}, {"hostname": "drawio"},
+    ]
+    assert tailnet.suffixed(devices) == ["argocd-1", "grafana-2"]
+
+
+def test_oauth_is_optional_so_a_tailscale_less_cluster_still_nukes():
+    from homelab.steps import tailnet
+
+    assert tailnet.oauth_from_bundle("") is None
+    assert tailnet.oauth_from_bundle(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: grafana-admin\n"
+    ) is None
+    found = tailnet.oauth_from_bundle(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: operator-oauth\n"
+        "stringData:\n  client_id: abc\n  client_secret: def\n"
+    )
+    assert found == ("abc", "def")
