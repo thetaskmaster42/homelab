@@ -1,0 +1,24 @@
+# Docmost — collaborative wiki, the Confluence/Notion shape.
+#
+# There is no official chart; this is the HelmForge community one, chosen after
+# comparing three: it tracks the current app version (0.95.0), was updated days
+# rather than months ago, and is GPG+cosign signed. The alternatives sit at app
+# 0.24.1 and 0.23.2 respectively -- years behind a project that ships often.
+#
+# Postgres comes from CloudNativePG in manifests/ rather than the chart's
+# bundled subchart, so the database is operated the same way as every other
+# database here. Redis stays as the chart's subchart, on local disk.
+#
+# SINGLE REPLICA, deliberately and temporarily. The chart hard-fails when
+# replicaCount > 1 unless storage.mode is s3, because it assumes the uploads PVC
+# is single-writer. Our nfs class is RWX so that assumption does not hold here,
+# but a Helm `fail` aborts at template time and cannot be patched around.
+# Moving to two replicas is ~10 lines of values plus a one-time file copy once
+# an S3 service exists -- see docs/decisions/0010-docmost.md.
+name: docmost
+namespace: docmost
+extraManifests: "true"
+chart:
+  repo: https://repo.helmforge.dev
+  name: docmost
+  version: "1.2.10"

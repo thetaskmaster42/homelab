@@ -1,0 +1,127 @@
+# Single replica. The chart refuses replicaCount > 1 unless storage.mode is s3
+# (a Helm `fail`, so it cannot be patched around), because it assumes the
+# uploads PVC is single-writer. See service.yaml and ADR 0010.
+replicaCount: 1
+
+image:
+  # Pinned rather than inherited from appVersion, so a chart bump cannot move
+  # the application version underneath us. Avoid the `-cf.beta` tags entirely:
+  # those are Cloudflare variants published amd64-only and would not schedule.
+  tag: "0.95.0"
+
+docmost:
+  # Built from the ingress host when empty, which would yield the bare tailnet
+  # name rather than a URL. Docmost puts this in redirects and invite links, so
+  # it has to be the full external address.
+  appUrl: https://docmost.mongoose-galaxy.ts.net
+
+  # NOT the real secret, and not a placeholder left by accident.
+  #
+  # The chart generates app-secret with randAlphaNum when this is empty, and
+  # reuses an existing value via Helm `lookup`. That works for `helm upgrade`
+  # against a live cluster but NOT for ArgoCD, which renders client-side where
+  # lookup returns nothing -- so the Secret would be regenerated on every
+  # refresh, the Deployment's checksum/secret annotation would change with it,
+  # and the pod would restart every few minutes with every user logged out,
+  # because APP_SECRET signs the JWTs. Exactly the failure
+  # tests/test_render_determinism.py exists to catch (see the Grafana note in
+  # kube-prometheus-stack/values.yaml).
+  #
+  # Setting any value here stops the randomisation and makes the render
+  # deterministic. The real APP_SECRET is then injected through extraEnv below,
+  # from a Secret in the SOPS bootstrap bundle -- this repo is public, so the
+  # actual value can never appear in this file. The chart offers no
+  # existingSecret for it, which is why the override is needed at all.
+  appSecret: "unused-placeholder-real-value-comes-from-extraEnv"
+
+  extraEnv:
+    # Rendered after the chart's own APP_SECRET, and Kubernetes takes the last
+    # of a duplicated env name -- so this wins. The Secret comes from
+    # clusters/rps/bootstrap-secrets.enc.yaml.
+    - name: APP_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: docmost-app-secret
+          key: app-secret
+
+  # Nothing here should phone home about a private wiki.
+  disableTelemetry: true
+
+# CloudNativePG, not the chart's bundled Postgres. manifests/cluster.yaml owns
+# it, so this database is operated like every other one here: streaming
+# replication, anti-affinity, and the operator's generated credentials.
+postgresql:
+  enabled: false
+
+database:
+  mode: external
+  external:
+    host: docmost-db-rw.docmost.svc.cluster.local
+    port: 5432
+    name: docmost
+    username: docmost
+    # CloudNativePG publishes <cluster>-app with the role's credentials. Its key
+    # is `password`, not the chart's default `database-password`.
+    existingSecret: docmost-db-app
+    existingSecretPasswordKey: password
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    # Same determinism problem as app-secret above: left empty the subchart
+    # generates a password on every render. This subchart DOES offer
+    # existingSecret, so it is used directly rather than worked around.
+    existingSecret: docmost-redis-auth
+    existingSecretPasswordKey: redis-password
+  standalone:
+    persistence:
+      enabled: true
+      # local-path, per ADR 0008. Redis here holds collaboration coordination
+      # and job queues -- reconstructible state, not documents -- so node
+      # pinning is the right trade for staying up when the NAS is not. Losing
+      # it drops in-flight realtime sessions; the documents are in Postgres.
+      storageClass: local-path
+      size: 1Gi
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+
+storage:
+  mode: local
+  local:
+    enabled: true
+    # nfs: uploaded files are the one thing here with no other copy, and
+    # local-path volumes are erased by `homelab nuke`. See ADR 0008.
+    storageClass: nfs
+    # ReadWriteMany even though only one replica runs. The chart sets no
+    # updateStrategy, so the Deployment defaults to RollingUpdate with maxSurge
+    # 1 -- meaning a second pod starts BEFORE the old one exits on every
+    # upgrade. Under ReadWriteOnce that second pod would block on the volume
+    # and the rollout would stall. RWX costs nothing on this class.
+    accessMode: ReadWriteMany
+    size: 10Gi
+
+ingress:
+  enabled: true
+  # Tailnet only. Docmost has real authentication of its own, so this is defence
+  # in depth rather than the only control -- but a private wiki is exactly the
+  # kind of thing that should not be reachable from the internet, so it is not
+  # funneled either.
+  ingressClassName: tailscale
+  hosts:
+    - host: docmost
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - docmost
+
+# Node application; the defaults are about right for a Pi. The limit matters
+# more than usual because the editor holds document state in memory per
+# connection.
+resources:
+  requests: { cpu: 100m, memory: 512Mi }
+  limits: { memory: 1Gi }

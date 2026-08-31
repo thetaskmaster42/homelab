@@ -20,6 +20,10 @@ spec:
     - https://openbao.github.io/openbao-helm
     - https://cloudnative-pg.github.io/charts
     - https://kubernetes-sigs.github.io/headlamp
+    # The only community-maintained source here rather than a vendor's own.
+    # Docmost publishes no official chart; HelmForge's is the one actively
+    # tracking it, and it is GPG+cosign signed. See ADR 0010.
+    - https://repo.helmforge.dev
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'
