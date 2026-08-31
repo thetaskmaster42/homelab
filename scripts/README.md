@@ -12,6 +12,7 @@ about how these Pis fail, and that is the expensive thing to rediscover.
 |---|---|---|
 | `bump-app-version.sh` | the laptop | Repins an application's image tag in `apps/*/kustomization.yaml`, refusing anything that would not deploy |
 | `openbao-configure.sh` | the laptop | One-time OpenBao setup (audit, KV v2, Kubernetes auth), and per-application roles |
+| `node/` | every node | Deployed by `homelab install`: minute-by-minute network snapshots, and the EEE-disable unit |
 | `collect-crash-evidence.sh` | the laptop | Waits for a dead node to answer, then captures the *previous* boot's journal before it rolls over |
 | `net-watchdog.sh` | a node | Detects the link-up-but-no-traffic blackhole and escalates: bounce the interface, then reboot |
 
@@ -141,3 +142,58 @@ ServiceAccount as the identity.
 up a `userpass` admin, verify you can actually log in with it, and only then
 revoke root. Regenerate it on demand with `bao operator generate-root` when
 genuinely needed rather than storing it.
+
+## node/ — deployed to every node by `homelab install`
+
+Not run by hand. `prereqs.ensure()` pushes these during install, which is what
+makes them survive a rebuild — a diagnostic that only exists on the node you
+happened to copy it to is not a diagnostic.
+
+| File | On the node | What it does |
+|---|---|---|
+| `netsnap.sh` | `/usr/local/bin/` | Collects ~40 sections of network state |
+| `netsnap-rotate.sh` | `/usr/local/bin/` | Takes one snapshot, keeping the two most recent |
+| `netsnap.{service,timer}` | `/etc/systemd/system/` | Runs it every minute, on the minute |
+| `eee-off@.service` | `/etc/systemd/system/` | Disables Energy Efficient Ethernet on the interface |
+
+### Why
+
+The nodes intermittently stop passing traffic while the interface still reports
+`1000Mb/s Full, Link detected: yes` with **every error counter at zero**, no ARP
+resolving to anything on the LAN, and nothing whatsoever in the kernel log. All
+three nodes have done it. Recovery needs a reboot — which resets every counter,
+destroying the evidence. So the state has to be captured while it is still
+broken, on the node itself, because the node is unreachable at the time.
+
+Snapshots land in `/var/log/netsnap/`:
+
+```
+netsnap.txt        the newest
+netsnap_old.txt    the one before it
+```
+
+**Two files at one-minute cadence covers a two-minute window.** Every outage so
+far has lasted hours, so in practice both files will be from *during* the
+outage and the last healthy snapshot is gone. That is a real limitation of
+keeping two. If the comparison matters more than the recency, raise the count or
+keep a separate last-known-good written only while the gateway still resolves.
+
+The new snapshot is collected to a temp file and only then rotated into place,
+so a node dying mid-collection cannot leave a truncated `netsnap.txt` with the
+previous one already discarded. Given the failure being investigated, "dies
+halfway through" is the expected case.
+
+~58KB per snapshot is about 82MB/day. These boot from SD, so it is worth
+knowing, but it is far below the cards' rated endurance and only two files exist
+at a time.
+
+### EEE
+
+`eee-off@eth0.service` is bound to the *device*, not to boot, so it re-applies
+whenever the interface reappears — including after a link bounce.
+
+It is a **hypothesis under test, not a fix.** EEE was enabled on these NICs while
+the switch reported no EEE support back, and a PHY that enters Low Power Idle
+and fails to wake the datapath cleanly produces exactly the observed signature.
+That is consistent, not proven. If the blackholes continue with EEE off, it is
+ruled out and the snapshots are what move the search forward.

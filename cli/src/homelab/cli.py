@@ -153,11 +153,13 @@ def cmd_install(args) -> int:
     server_runner = ssh_to(cluster, server, dry_run=args.dry_run)
 
     step("Node prerequisites")
+    node_files = repo_root() / "scripts" / "node"
     for node in cluster.nodes:
         runner = ssh_to(cluster, node, dry_run=args.dry_run)
         try:
-            installed = prereqs.ensure(runner)
-            ok(f"{node.name:<14} {'installed ' + ', '.join(installed) if installed else 'ok'}")
+            installed = prereqs.ensure(runner, source_dir=node_files)
+            detail = "installed " + ", ".join(installed) if installed else "ok"
+            ok(f"{node.name:<14} {detail}, node units deployed")
         except Unreachable:
             warn(f"{node.name:<14} unreachable — will be handled when it joins")
         except AuthError as exc:
