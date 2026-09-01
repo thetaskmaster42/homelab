@@ -57,3 +57,52 @@ redis:
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { memory: 256Mi }
+
+# LAN Ingress for the ArgoCD UI, alongside the tailnet one configured above.
+#
+# Why extraObjects and not a second `server.ingress`: that block renders exactly
+# one Ingress with one class, and the LAN one needs `traefik` plus the homelab-ca
+# issuer. Why here and not a manifest under argocd/: ArgoCD is installed by
+# `homelab bootstrap` via Helm, not by an ApplicationSet, so this file is the
+# only place its own resources are defined. Changing it means re-running
+# bootstrap -- which is idempotent, and already true of everything else here.
+#
+# SECURITY, read before copying this pattern: the tailnet Ingress above is
+# deliberately tailnet-only because ArgoCD holds sync control over every service
+# in the cluster. This widens that boundary to anything on 192.168.11.0/24 --
+# guest devices and IoT included. It is defensible because ArgoCD authenticates
+# (headlamp, which does not, is deliberately NOT given a LAN Ingress), but it is
+# a real change in exposure rather than a formality. Remove this block to revert.
+#
+# KNOWN LIMITATION, same shape as Grafana's root_url: `global.domain` above is a
+# single absolute URL pinned to the tailnet name. The UI works on relative paths
+# so browsing is fine, but anything ArgoCD emits as an absolute link points at
+# argocd.mongoose-galaxy.ts.net. Split-horizon DNS on the Pi-hole is the fix.
+extraObjects:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: argocd-server-lan
+      annotations:
+        cert-manager.io/cluster-issuer: homelab-ca
+    spec:
+      ingressClassName: traefik
+      rules:
+        - host: argocd.rps-home.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: argocd-server
+                    # Port 80, not 443: `server.insecure: true` above makes
+                    # argocd-server speak plain HTTP inside the cluster. Pointing
+                    # Traefik at 443 would be TLS-on-TLS and surface as a
+                    # redirect loop.
+                    port:
+                      number: 80
+      tls:
+        - hosts:
+            - argocd.rps-home.com
+          secretName: argocd-lan-tls

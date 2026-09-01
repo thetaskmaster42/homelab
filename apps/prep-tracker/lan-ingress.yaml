@@ -1,0 +1,39 @@
+# LAN access, alongside the tailnet Ingress rather than instead of it. Both
+# resolve to the same Service; which one you reach depends on where you are.
+#
+#   tailnet   prep-tracker.mongoose-galaxy.ts.net   real Let's Encrypt cert, from anywhere
+#   LAN       prep-tracker.rps-home.com             homelab-ca cert, 192.168.11.240 only
+#
+# See docs/decisions/0016-lan-ingress.md -- in particular the one-time step of
+# trusting the homelab-ca root on every device that will browse these.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prep-tracker-lan
+  annotations:
+    cert-manager.io/cluster-issuer: homelab-ca
+    # Wave 3, matching the tailnet Ingress next door, and for the same reason:
+    # ArgoCD will not start a wave until every resource in the previous one is
+    # Healthy, so an Ingress left in wave 0 sits alongside the CloudNativePG
+    # Cluster and can stall the migrate Job and Deployment behind it. Exposure is
+    # the last thing that should matter -- it goes after the workload, never
+    # before it. The kustomization patch that sets this on the tailnet Ingress
+    # targets it by name, so this file has to carry its own.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: prep-tracker.rps-home.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prep-tracker
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - prep-tracker.rps-home.com
+      secretName: prep-tracker-lan-tls

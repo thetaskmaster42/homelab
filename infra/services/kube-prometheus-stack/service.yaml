@@ -1,6 +1,9 @@
 name: kube-prometheus-stack
 namespace: monitoring
-extraManifests: "false"
+# manifests/ holds the LAN Ingress. The chart's grafana.ingress block renders
+# only ONE Ingress, and the LAN one needs a different class and CA -- so it is a
+# raw manifest, which is what this companion Application exists to sync.
+extraManifests: "true"
 chart:
   repo: https://prometheus-community.github.io/helm-charts
   name: kube-prometheus-stack
