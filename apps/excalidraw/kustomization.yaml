@@ -6,6 +6,11 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  # A second Ingress for LAN access. Deliberately a separate file rather than
+  # more rules on the first: the two have different classes, different
+  # certificate authorities and different audiences, and merging them would hide
+  # that a change to one does not affect the other.
+  - lan-ingress.yaml
 
 images:
   # Our fork's build, not excalidraw/excalidraw. Upstream ships arm64 on

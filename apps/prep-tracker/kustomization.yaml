@@ -23,6 +23,11 @@ resources:
   # precisely so the two replicas cannot race each other on migration.
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/migrate-job.yaml
   - ingress.yaml
+  # A second Ingress for LAN access. Deliberately a separate file rather than
+  # more rules on the first: the two have different classes, different
+  # certificate authorities and different audiences, and merging them would hide
+  # that a change to one does not affect the other.
+  - lan-ingress.yaml
 
 images:
   # The base ships `:latest` with imagePullPolicy: Always, which means you can

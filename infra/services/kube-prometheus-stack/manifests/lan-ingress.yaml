@@ -1,0 +1,42 @@
+# Grafana on the LAN, alongside the tailnet Ingress the chart renders from
+# values.yaml. A raw manifest rather than a second entry in those values because
+# the chart's grafana.ingress block renders ONE Ingress with one class, and these
+# two need different classes and different certificate authorities.
+#
+#   tailnet   grafana.mongoose-galaxy.ts.net   real Let's Encrypt cert, from anywhere
+#   LAN       grafana.rps-home.com             homelab-ca cert, 192.168.11.240 only
+#
+# KNOWN LIMITATION, and the reason this is worth reading before adding more:
+# grafana.ini's root_url is a single absolute URL, pinned to the tailnet name in
+# ../values.yaml. Grafana serves its UI on relative paths, so browsing works
+# here, but anything Grafana renders as an ABSOLUTE link -- alert notifications,
+# "copy shareable link", rendered-image URLs -- will point at
+# grafana.mongoose-galaxy.ts.net and will not resolve for a LAN-only client.
+# There is no multi-domain root_url; the real fix is one hostname reachable from
+# both places, which needs split-horizon DNS on the Pi-hole.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-lan
+  namespace: monitoring
+  annotations:
+    cert-manager.io/cluster-issuer: homelab-ca
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: grafana.rps-home.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # The chart's fullname, not "grafana" -- kube-prometheus-stack
+                # prefixes its subchart Services with the release name.
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - grafana.rps-home.com
+      secretName: grafana-lan-tls
