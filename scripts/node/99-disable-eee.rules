@@ -1,0 +1,17 @@
+# Disable Energy Efficient Ethernet whenever the interface appears.
+#
+# This replaces a systemd unit bound to sys-subsystem-net-devices-eth0.device,
+# which SILENTLY FAILED TO RUN on a fresh boot: the unit was enabled, the symlink
+# was in place, the device unit was active (plugged), and the service never
+# started. Two nodes had EEE off and one had it on, and nothing reported a
+# problem. A mitigation that stops applying without saying so is worse than none,
+# because it makes every subsequent measurement untrustworthy.
+#
+# udev fires on the device event itself, which is the thing that actually
+# happens, and it re-fires whenever the interface is re-added -- including after
+# the sentinel bounces the link.
+#
+# Note that EEE has been EXONERATED as the cause of the blackholes: worker-1
+# blackholed with EEE off for 9.5 hours beforehand. This stays only so the
+# variable remains controlled while the real cause is still open.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth0", RUN+="/usr/sbin/ethtool --set-eee eth0 eee off"

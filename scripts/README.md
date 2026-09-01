@@ -13,7 +13,7 @@ about how these Pis fail, and that is the expensive thing to rediscover.
 | `bump-app-version.sh` | the laptop | Repins an application's image tag in `apps/*/kustomization.yaml`, refusing anything that would not deploy |
 | `node/` | every node | Deployed by `homelab install`: minute-by-minute network snapshots, and the EEE-disable unit |
 | `collect-crash-evidence.sh` | the laptop | Waits for a dead node to answer, then captures the *previous* boot's journal before it rolls over |
-| `net-watchdog.sh` | a node | Detects the link-up-but-no-traffic blackhole and escalates: bounce the interface, then reboot |
+| `net-watchdog.sh` | a node | Superseded by `node/netsnap-sentinel.sh`, which does the same escalation *after* capturing evidence |
 
 ## bump-app-version.sh
 
@@ -109,9 +109,12 @@ happened to copy it to is not a diagnostic.
 | File | On the node | What it does |
 |---|---|---|
 | `netsnap.sh` | `/usr/local/bin/` | Collects ~40 sections of network state |
-| `netsnap-rotate.sh` | `/usr/local/bin/` | Takes one snapshot, keeping the two most recent |
-| `netsnap.{service,timer}` | `/etc/systemd/system/` | Runs it every minute, on the minute |
-| `eee-off@.service` | `/etc/systemd/system/` | Disables Energy Efficient Ethernet on the interface |
+| `netsnap-sentinel.sh` | `/usr/local/bin/` | Heartbeat, failure capture, and recovery escalation |
+| `netsnap-preboot.sh` | `/usr/local/bin/` | Preserves the previous boot's snapshot before anything overwrites it |
+| `netsnap-archive.sh` | `/usr/local/bin/` | Half-hourly archive, pruned at 24h |
+| `netsnap-{preboot,sentinel,archive}.service` | `/etc/systemd/system/` | Units for the above |
+| `netsnap-archive.timer` | `/etc/systemd/system/` | Fires the archive every 30 minutes |
+| `99-disable-eee.rules` | `/etc/udev/rules.d/` | Disables Energy Efficient Ethernet as the interface appears |
 
 ### Why
 
@@ -154,3 +157,45 @@ the switch reported no EEE support back, and a PHY that enters Low Power Idle
 and fails to wake the datapath cleanly produces exactly the observed signature.
 That is consistent, not proven. If the blackholes continue with EEE off, it is
 ruled out and the snapshots are what move the search forward.
+
+## The sentinel
+
+`netsnap-sentinel.sh` merges three jobs that were previously separate, because
+separating them loses the evidence:
+
+1. **Heartbeat.** Probes this node's peers (rendered into a systemd drop-in from
+   `cluster.yaml` by `homelab install`) every 10s. It is reachable if *any*
+   target answers — all of them failing is what distinguishes "this node is
+   isolated" from "one peer is down".
+2. **Capture on transition.** After 6 consecutive failures it writes
+   `failure/failure-<ts>.txt` and copies the last healthy snapshot alongside it
+   as `lastgood-<ts>.txt`. The pairing is the point: a snapshot of a broken node
+   means little without the same 40 sections taken while it worked.
+3. **Recovery.** Bounce the link at 12 failures (~2m), reboot at 90 (~15m).
+
+The merge is deliberate. **A link bounce resets the interface counters**, so any
+recovery attempt destroys the evidence for the failure that triggered it. Only
+one process can guarantee capture happens first.
+
+### What the previous design got wrong
+
+The old `netsnap.timer` took a snapshot every minute and kept two. That is a
+two-minute window, and the recovery reboot consumed it every time — worker-1's
+outage snapshots were overwritten two minutes after it came back, which is why
+five blackholes produced no usable evidence. `netsnap-preboot.service` now
+preserves the previous boot's snapshot into `preboot/` before anything runs, and
+`failure/` is never pruned.
+
+### Testing it
+
+`NETSNAP_DIR` redirects all output, so the capture path can be exercised against
+a scratch directory without corrupting real evidence or rebooting a node:
+
+```sh
+sudo env NETSNAP_DIR=/tmp/nstest PROBE_IPS="192.0.2.1" \
+     INTERVAL=1 FAIL_THRESHOLD=3 BOUNCE_AFTER=0 REBOOT_AFTER=0 \
+     timeout 10 ./netsnap-sentinel.sh
+```
+
+`BOUNCE_AFTER=0` and `REBOOT_AFTER=0` disable the two steps that touch the real
+machine, leaving detection and capture under test.

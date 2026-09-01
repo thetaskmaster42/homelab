@@ -1,0 +1,13 @@
+# Every 30 minutes. Slow enough that a day of history is under 3MB, frequent
+# enough to show a counter that has been climbing for hours -- which neither the
+# failure capture nor the last-good snapshot can reveal on their own.
+[Unit]
+Description=Archive a network snapshot every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

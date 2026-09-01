@@ -1,0 +1,19 @@
+# Runs ONCE at boot, before anything else touches /var/log/netsnap.
+#
+# Ordering is the entire point. worker-1's 14.5-hour blackhole produced exactly
+# the snapshot the tooling exists for, and the timer restarting overwrote it two
+# minutes after the recovery reboot. Before=  on the other two units is what
+# stops that happening again.
+[Unit]
+Description=Preserve netsnap snapshots from the previous boot
+DefaultDependencies=no
+After=local-fs.target
+Before=netsnap-sentinel.service netsnap-archive.timer
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/netsnap-preboot.sh
+
+[Install]
+WantedBy=multi-user.target

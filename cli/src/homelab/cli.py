@@ -154,10 +154,20 @@ def cmd_install(args) -> int:
 
     step("Node prerequisites")
     node_files = repo_root() / "scripts" / "node"
+    # The sentinel probes this node's PEERS, rendered from cluster.yaml so the
+    # list cannot drift from the node inventory. That framing is deliberate:
+    # every target failing means THIS node is isolated, while one target failing
+    # is that peer's problem -- and only the first should trigger a reboot.
+    #
+    # Peers only, not a derived gateway address: the node inventory is data we
+    # actually have, and guessing the router's address from the MetalLB pool
+    # would be an assumption that silently rots. The script's own default adds
+    # the gateway and NAS when it runs without this override.
     for node in cluster.nodes:
+        probe_ips = " ".join(str(n.ip) for n in cluster.nodes if n.name != node.name)
         runner = ssh_to(cluster, node, dry_run=args.dry_run)
         try:
-            installed = prereqs.ensure(runner, source_dir=node_files)
+            installed = prereqs.ensure(runner, source_dir=node_files, probe_ips=probe_ips)
             detail = "installed " + ", ".join(installed) if installed else "ok"
             ok(f"{node.name:<14} {detail}, node units deployed")
         except Unreachable:

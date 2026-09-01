@@ -1,0 +1,23 @@
+# Connectivity heartbeat, evidence capture, and recovery -- deliberately one
+# process. A link bounce resets the interface counters, so the evidence must be
+# captured before recovery is attempted; separate daemons would race over that
+# ordering, and the losing order destroys the data.
+[Unit]
+Description=Network sentinel: heartbeat, failure capture, and recovery
+After=network-online.target netsnap-preboot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/netsnap-sentinel.sh
+Restart=always
+RestartSec=15
+Nice=10
+IOSchedulingClass=idle
+# PROBE_IPS is rendered by the CLI from cluster.yaml, so peers stay correct when
+# the node inventory changes. REBOOT_AFTER=0 disables the reboot escalation and
+# leaves capture and link-bounce in place.
+Environment=IFACE=eth0
+
+[Install]
+WantedBy=multi-user.target
