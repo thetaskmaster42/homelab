@@ -1,0 +1,20 @@
+# MUST be named `api`. The nginx config baked into the web image proxies to
+# `http://api:3000` by hostname, so this Service name is load-bearing -- rename
+# it and the front end returns 502 on every /api call with nothing obviously
+# wrong in either pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app: opengym
+    component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: opengym
+    component: api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

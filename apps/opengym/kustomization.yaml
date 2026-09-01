@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: opengym
+
+resources:
+  - api-statefulset.yaml
+  - api-service.yaml
+  - web-statefulset.yaml
+  - web-service.yaml
+  - ingress.yaml
+
+images:
+  # Built from our fork; upstream publishes nothing pullable. Both are arm64-only
+  # by design -- there is no amd64 node and never will be. The date is a
+  # snapshot, not a semver claim: the fork tracks a moving upstream, so the
+  # companion sha- tag in GHCR is what identifies the exact tree.
+  - name: ghcr.io/thetaskmaster42/opengym-api
+    newTag: "2026.09.01"
+  - name: ghcr.io/thetaskmaster42/opengym-web
+    newTag: "2026.09.01"
+  # Pinned like everything else. `latest` on a git image is a moving target that
+  # would re-resolve on every pod start.
+  - name: alpine/git
+    newTag: "2.49.1"
