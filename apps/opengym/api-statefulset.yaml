@@ -1,0 +1,117 @@
+# The API: Node, no framework, and everything it knows lives in files.
+#
+# ONE replica, and this is not tunable. server.js writes db.json and
+# state-<uid>.json with plain fs.writeFileSync and no locking of any kind. Two
+# replicas would interleave writes and corrupt user state -- silently, and only
+# under concurrent use, which is the worst way to find out.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: api
+  labels:
+    app: opengym
+    component: api
+spec:
+  serviceName: api
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opengym
+      component: api
+  template:
+    metadata:
+      labels:
+        app: opengym
+        component: api
+    spec:
+      # Pinned to one node because the data is a directory ON that node. See the
+      # volume comment below.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker-2
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/thetaskmaster42/opengym-api:2026.09.01
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PORT
+              value: "3000"
+            - name: DATA_DIR
+              value: /data
+
+            # WebAuthn. These three ARE part of the credentials: the RP ID is
+            # baked into every passkey at registration, so changing any of them
+            # invalidates every existing login with no way back.
+            - name: RP_ID
+              value: opengym.mongoose-galaxy.ts.net
+            - name: ORIGIN
+              value: https://opengym.mongoose-galaxy.ts.net
+            - name: RP_NAME
+              value: openGym
+
+            # Off, so the first person to reach it can register -- there is no
+            # bootstrap admin and no way to issue an invite before an admin
+            # exists. The tailnet is the control until then. Turn this on (and
+            # set ADMIN_UIDS) once you have registered, or anyone on the tailnet
+            # can create an account.
+            - name: INVITE_ONLY
+              value: "0"
+          # No secrets. server.js generates its session secret and VAPID keypair
+          # into DATA_DIR on first start, at mode 0600. That is the shape ADR
+          # 0014 prefers: a credential nobody chose and nobody wrote down.
+          readinessProbe:
+            httpGet: { path: /api/config, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 5
+          livenessProbe:
+            httpGet: { path: /api/config, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        # A hostPath, deliberately, rather than a PVC.
+        #
+        # The requirement is that a `homelab nuke` does NOT destroy this. The
+        # `local-path` StorageClass cannot do that: it provisions under
+        # /var/lib/rancher/k3s/storage, which k3s-uninstall.sh deletes. Dynamic
+        # `nfs` cannot either -- it survives the nuke but a rebuilt cluster
+        # provisions a FRESH subdirectory, so the volume comes back empty, which
+        # is how rh-dashboard's archive was orphaned.
+        #
+        # /srv is untouched by both k3s-uninstall.sh and the CNI cleanup, so a
+        # directory there outlives any number of rebuilds. Verified, not assumed.
+        #
+        # A static PersistentVolume would express this more conventionally, but
+        # a PV is cluster-scoped and the `apps` AppProject deliberately refuses
+        # those -- correctly, since a PV can declare a hostPath to anywhere on
+        # the host. A hostPath in the pod spec asks for exactly one directory and
+        # needs no new privilege.
+        #
+        # THE TRADE, stated plainly: this data is now on ONE SD card. It holds
+        # every passkey and the session secret, and losing it locks every user
+        # out permanently -- passkeys cannot be recovered or re-issued. A static
+        # NFS PersistentVolume with a declared path would survive rebuilds for
+        # the same reason and not depend on a single card; that is the intended
+        # next version. See docs/decisions/0015-opengym.md.
+        - name: data
+          hostPath:
+            path: /srv/opengym/data
+            type: DirectoryOrCreate

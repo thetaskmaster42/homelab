@@ -1,0 +1,11 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo is our fork. openGym publishes no images at all -- the upstream
+# compose points at ghcr.io/duartesantos8/opengym-{api,web}, both of which 403,
+# and upstream has no CI. Self-hosters are expected to build locally, so the
+# fork carries a workflow that publishes arm64 images we can pin.
+name: opengym
+namespace: opengym
+sourceRepo: https://github.com/thetaskmaster42/openGym
+exposure: tailnet

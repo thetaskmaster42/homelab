@@ -1,0 +1,30 @@
+# ONE ingress, on `web` only. The nginx in the web image proxies /api to the api
+# Service, and that single origin is a hard requirement rather than a
+# simplification: WebAuthn binds every passkey to the origin that created it, so
+# the API and the UI must be reachable at the same hostname.
+#
+# Tailnet only, never funneled. openGym has real authentication -- passkeys, which
+# are stronger than passwords -- so this is defence in depth rather than the only
+# control. But a fitness log is exactly the kind of personal data that has no
+# business being reachable from the internet.
+#
+# THE HOSTNAME IS PART OF THE CREDENTIALS. RP_ID below is derived from it, and
+# WebAuthn bakes the RP ID into every passkey at registration. If this hostname
+# ever changes, every passkey stops working permanently -- there is no migration,
+# users simply re-register. That is why `homelab nuke` deletes stale tailnet
+# devices: without it the operator appends `-1` on a rebuild and everyone is
+# locked out of an app that looks perfectly healthy.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opengym
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: web
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - opengym

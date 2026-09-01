@@ -1,0 +1,108 @@
+# nginx serving the React build, proxying /api to the api Service, and serving
+# ~140MB of exercise images and GIFs from a node directory.
+#
+# A StatefulSet rather than a Deployment purely for the volume: the media lives
+# on one node, so the pod has to be there too, and a StatefulSet makes that
+# pinning explicit rather than incidental.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+  labels:
+    app: opengym
+    component: web
+spec:
+  serviceName: web
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opengym
+      component: web
+  template:
+    metadata:
+      labels:
+        app: opengym
+        component: web
+    spec:
+      # Same node as the api, and as the media directory it serves from.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker-2
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Populates the media directory once, then never again: the upstream
+        # script checks whether the directory is already non-empty and skips.
+        # Because /srv survives `homelab nuke`, that check makes every rebuild
+        # after the first a no-op instead of a 140MB download -- which is the
+        # entire reason this is a node directory rather than a PVC.
+        - name: media
+          image: alpine/git:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              if [ -n "$(ls -A /out/img 2>/dev/null)" ]; then
+                echo "media already present ($(ls /out/img | wc -l) images) — skipping"
+                exit 0
+              fi
+              echo "downloading exercise media (~140MB, one time)…"
+              git clone --depth 1 https://github.com/hasaneyldrm/exercises-dataset /tmp/ds
+              mkdir -p /out/img /out/gif
+              cp /tmp/ds/images/*.jpg /out/img/
+              cp /tmp/ds/videos/*.gif /out/gif/
+              echo "media ready ($(ls /out/img | wc -l) images)"
+          volumeMounts:
+            - name: media
+              mountPath: /out
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 512Mi }
+      containers:
+        - name: web
+          image: ghcr.io/thetaskmaster42/opengym-web:2026.09.01
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # nginx's master binds :80 and drops its workers to the nginx
+              # user; without these the entrypoint fails rather than degrades.
+              add: ["NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE"]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            # Read-only: only the init container writes here.
+            - name: media
+              mountPath: /usr/share/nginx/html/img
+              subPath: img
+              readOnly: true
+            - name: media
+              mountPath: /usr/share/nginx/html/gif
+              subPath: gif
+              readOnly: true
+      volumes:
+        # Node directory, same reasoning as the api's data volume: /srv is the
+        # only location that survives `homelab nuke`, and surviving is what
+        # turns the 140MB download into a one-time cost. Losing this one is
+        # cheap though -- the init container simply downloads it again.
+        - name: media
+          hostPath:
+            path: /srv/opengym/media
+            type: DirectoryOrCreate
