@@ -58,13 +58,28 @@ spec:
             - name: RP_NAME
               value: openGym
 
-            # Off, so the first person to reach it can register -- there is no
-            # bootstrap admin and no way to issue an invite before an admin
-            # exists. The tailnet is the control until then. Turn this on (and
-            # set ADMIN_UIDS) once you have registered, or anyone on the tailnet
-            # can create an account.
+            # Off, deliberately, for a SINGLE-USER instance.
+            #
+            # There is no bootstrap admin and no way to issue an invite before an
+            # admin exists, so the first account has to be created by whoever
+            # reaches the app first. On a tailnet with one member, the network
+            # closes that window.
+            #
+            # The sequence is not optional:
+            #   1. register immediately at https://opengym.mongoose-galaxy.ts.net
+            #   2. set ADMIN_UIDS below to the uid that produced
+            #   3. flip this to "1"
+            # Until step 3, anyone on the tailnet can create an account.
+            #
+            # A later version seeds the first admin from a secret manager at
+            # deploy time, which removes the open window rather than closing it
+            # by hand. See docs/decisions/0015-opengym.md.
             - name: INVITE_ONLY
               value: "0"
+            # Set to the uid from step 1, then redeploy. Empty means nobody has
+            # the admin dashboard, which is harmless but means no invites.
+            - name: ADMIN_UIDS
+              value: ""
           # No secrets. server.js generates its session secret and VAPID keypair
           # into DATA_DIR on first start, at mode 0600. That is the shape ADR
           # 0014 prefers: a credential nobody chose and nobody wrote down.
@@ -105,12 +120,25 @@ spec:
         # the host. A hostPath in the pod spec asks for exactly one directory and
         # needs no new privilege.
         #
-        # THE TRADE, stated plainly: this data is now on ONE SD card. It holds
-        # every passkey and the session secret, and losing it locks every user
-        # out permanently -- passkeys cannot be recovered or re-issued. A static
-        # NFS PersistentVolume with a declared path would survive rebuilds for
-        # the same reason and not depend on a single card; that is the intended
-        # next version. See docs/decisions/0015-opengym.md.
+        # THE TRADE, stated plainly: this is the least replaceable data in the
+        # cluster and it is on ONE SD card.
+        #
+        # It holds the WebAuthn credentials, the session secret and the VAPID
+        # keys. A passkey is a keypair whose public half lives HERE -- lose this
+        # directory and there is nothing to re-issue, no reset, and no email
+        # recovery. Every account is gone permanently, not inconvenienced.
+        #
+        # Accepted only because this instance has one user, so a loss costs one
+        # re-registration. That stops being true the moment a second person has
+        # an account.
+        #
+        # It is a few megabytes. Copying it off this node is the highest-value
+        # backup in the cluster per byte, and nothing here is backed up yet.
+        #
+        # Next version: a static NFS PersistentVolume with a declared path --
+        # survives rebuilds for a different reason (a rebuilt cluster reattaches
+        # a declared path instead of provisioning an empty one) and does not
+        # depend on a single card. See docs/decisions/0015-opengym.md.
         - name: data
           hostPath:
             path: /srv/opengym/data

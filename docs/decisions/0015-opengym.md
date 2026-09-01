@@ -75,16 +75,38 @@ resources — correctly, because a PV can declare a `hostPath` to *anywhere* on 
 host, which is real privilege escalation rather than a formality. A `hostPath` in
 the pod spec asks for exactly one directory and needs no new privilege.
 
-## What this costs — and the intended next version
+## ⚠️ The passkey data risk, accepted knowingly
 
-**The data is on one SD card.** It holds every passkey and the session secret,
-and losing it locks every user out permanently: passkeys cannot be recovered or
-re-issued. If that node's card fails, the accounts are gone.
+**`/srv/opengym/data` on `k3s-worker-2` is the least replaceable data in this
+cluster, and it lives on one SD card.**
 
-For the media that trade is obviously right — losing it costs a re-download, and
-local disk serves 140 MB of images far faster than NFS would.
+It holds the WebAuthn credentials, the session secret and the VAPID keypair. If
+that card fails, or that node is rebuilt from a fresh image, **every account is
+gone and cannot be recovered** — a passkey is a keypair held by the
+authenticator and registered against this server's copy. Lose the server's copy
+and there is nothing to re-issue, nothing to reset, and no email-recovery path
+to fall back on. Everyone re-registers from nothing.
 
-For the data it is a real risk accepted for this version.
+This differs in kind from every other volume here:
+
+| | If lost |
+|---|---|
+| Prometheus, Grafana | metrics start from empty — annoying |
+| openGym **media** | re-downloads, 140 MB — free |
+| rh-dashboard archive | statements can be re-uploaded — tedious |
+| **openGym data** | **accounts are unrecoverable** |
+
+It is accepted for this version because the instance has one user and the cost of
+a rebuild is one re-registration. That calculus changes the moment a second
+person has an account, and it is not a risk to leave in place indefinitely.
+
+**Mitigation until the next version:** `/srv/opengym/data` is a few megabytes.
+Copying it off the node — into the NAS, or anywhere at all — is the single
+highest-value backup in the cluster per byte, and there is currently no backup
+of anything.
+
+For the media the same trade is obviously right: losing it costs a re-download,
+and local disk serves 140 MB of images far faster than NFS would.
 
 > **Next version: a static NFS PersistentVolume with a declared path.**
 >
@@ -111,10 +133,29 @@ arrives first. It is small, and it is the least replaceable data in the cluster.
 - **No secrets.** The session secret and VAPID keypair are generated into the
   data directory at 0600 on first start. Nothing to encrypt, nothing to rotate —
   the shape [ADR 0014](0014-sops-as-the-only-secret-manager.md) prefers.
-- **`INVITE_ONLY=0` initially**, because there is no bootstrap admin and no way
-  to issue an invite before one exists. The tailnet is the only control until you
-  register. **Turn it on and set `ADMIN_UIDS` once you have an account**, or
-  anyone on the tailnet can create one.
+- **`INVITE_ONLY=0` initially, by design, for a single-user instance.** There is
+  no bootstrap admin and no way to issue an invite before an admin exists, so the
+  first account has to be created by whoever reaches the app first. On a tailnet
+  with one member that window is closed by the network itself.
+
+  The intended sequence, and it is not optional:
+
+  1. Deploy, then **register immediately** at
+     `https://opengym.mongoose-galaxy.ts.net` — this creates the only account.
+  2. Read the resulting uid and set `ADMIN_UIDS` to it.
+  3. Set `INVITE_ONLY=1`.
+
+  Until step 3, anyone who can reach the tailnet can create an account. That is
+  acceptable for a single-operator tailnet and would not be for anything wider.
+
+  **Next version: seed the first admin from the secret manager instead.** A
+  bootstrap credential supplied at deploy time removes the open-registration
+  window entirely, rather than closing it by hand afterwards. That needs a
+  secret manager, which this cluster does not currently have
+  ([ADR 0014](0014-sops-as-the-only-secret-manager.md)) — a working
+  implementation is parked on `feature-openbao`, and admin bootstrap is a
+  concrete consumer for it, which is precisely the bar ADR 0014 set for bringing
+  it back.
 - **The media download clones a third-party repo at `--depth 1` of a moving
   branch.** It only runs when the directory is empty, so in practice once — but
   it is unpinned, and pinning it to a commit would be an improvement.
