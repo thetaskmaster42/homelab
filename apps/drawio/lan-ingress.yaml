@@ -1,0 +1,48 @@
+# LAN access, alongside the tailnet Ingress rather than instead of it. Both
+# resolve to the same Service; which one you reach depends on where you are.
+#
+#   tailnet   drawio.mongoose-galaxy.ts.net   real Let's Encrypt cert, from anywhere
+#   LAN       drawio.rps-home.com             homelab-ca cert, 192.168.11.240 only
+#
+# TLS comes from the private CA chain built in ADR 0003 (selfsigned-root ->
+# homelab-ca), which existed for exactly this and had no consumer until now.
+# cert-manager watches this Ingress and issues the leaf into the named Secret.
+#
+# Every device must trust the homelab-ca root once, or browsers warn on every
+# visit. One root covers every LAN service and is valid to 2036 -- see
+# docs/decisions/0016-lan-ingress.md for how to export and install it.
+#
+# rps-home.com is a domain we own, so a real Let's Encrypt certificate via DNS-01
+# is possible later and would remove the trust step entirely. It needs a DNS
+# provider API token, which is a secret this cluster does not have yet; the
+# private CA is the version that works today with nothing to store.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: drawio-lan
+  annotations:
+    # cert-manager issues the leaf from the local CA. Without this the tls block
+    # below names a Secret that nothing ever creates, and Traefik silently falls
+    # back to its own default self-signed cert -- which looks like a working
+    # site with an inexplicable certificate.
+    cert-manager.io/cluster-issuer: homelab-ca
+spec:
+  # NOT the default class, even though `traefik` IS the cluster default. Naming
+  # it makes the pairing with the tailnet Ingress obvious in `kubectl get ing`,
+  # and means a change to the default cannot silently redirect this.
+  ingressClassName: traefik
+  rules:
+    - host: drawio.rps-home.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: drawio
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - drawio.rps-home.com
+      secretName: drawio-lan-tls
