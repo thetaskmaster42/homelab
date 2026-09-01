@@ -1,0 +1,10 @@
+[Unit]
+Description=Archive a network snapshot
+After=netsnap-preboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/netsnap-archive.sh
+TimeoutStartSec=120
+Nice=10
+IOSchedulingClass=idle
