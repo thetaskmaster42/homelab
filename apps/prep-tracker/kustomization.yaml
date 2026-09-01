@@ -71,9 +71,27 @@ patches:
         value: "1"
       # A Job spec is immutable, so a changed migration cannot be patched in
       # place. Replace lets ArgoCD recreate it rather than fail the sync.
+      #
+      # Force=true is not optional here, despite reading like a bigger hammer
+      # than Replace already is. Replace alone issues `kubectl replace`, and that
+      # cannot succeed on a Job: the Job controller generates spec.selector and
+      # its matching template labels at admission, both are immutable, and the
+      # manifest carries neither -- so the replace submits null for a field that
+      # may not change. The sync then fails with "spec.selector: Invalid value:
+      # null: field is immutable" on EVERY sync after the first, whether or not
+      # the migration itself changed.
+      #
+      # That failure is not confined to the Job. It fails wave 1, and ArgoCD will
+      # not start a later wave until the current one succeeds -- so the Deployment
+      # (wave 2) and both Ingresses (wave 3) stop being applied and the app
+      # silently stops receiving any change at all. It surfaced when the LAN
+      # Ingress was added and never appeared.
+      #
+      # Force=true makes ArgoCD delete and recreate rather than replace, which is
+      # what "recreate it" above always meant.
       - op: add
         path: /metadata/annotations/argocd.argoproj.io~1sync-options
-        value: Replace=true
+        value: Replace=true,Force=true
 
   - target:
       kind: Deployment
