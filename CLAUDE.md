@@ -102,6 +102,21 @@ the API with nothing enforcing them. No error, no event: a policy that fails
 open. Verified enforced over TCP; note that kube-router allows ICMP echo
 unconditionally, so `ping` cannot be used to test it.
 
+## How changes get made
+
+**Every change goes on a branch and merges through a pull request.** No direct
+commits to `main`, including one-line fixes and documentation.
+
+```sh
+git checkout -b feature/<thing>      # or fix/, chore/
+# ... work, with `make validate` green ...
+gh pr create --fill
+```
+
+This repo pushes to a live cluster the moment `main` moves — ArgoCD reconciles
+from it — so `main` is not a working area. A PR is the only place a change can
+be looked at before it is deployed.
+
 ## Commands
 
 There is no build. Everything is validation or cluster operations.
