@@ -171,7 +171,24 @@ separating them loses the evidence:
    `failure/failure-<ts>.txt` and copies the last healthy snapshot alongside it
    as `lastgood-<ts>.txt`. The pairing is the point: a snapshot of a broken node
    means little without the same 40 sections taken while it worked.
-3. **Recovery.** Bounce the link at 12 failures (~2m), reboot at 90 (~15m).
+3. **Staged recovery**, cheapest first, recording which step restored traffic:
+
+   | failures | stage | resets | if this is what fixes it |
+   |---|---|---|---|
+   | 9 (~90s) | `ip neigh flush` | this kernel's ARP table only | stale neighbour state; NIC and switch were fine |
+   | 12 (~2m) | `ethtool -r` | PHY autonegotiation | link negotiation, not ARP |
+   | 15 (~2.5m) | `ip link down/up` | MAC + PHY + ARP + switch re-learn | driver state, or the switch port |
+   | 90 (~15m) | reboot | everything | |
+
+   The staging exists because a link bounce resets **three things at once** --
+   the Pi's MAC/PHY, the ARP cache (`arp_evict_nocarrier=1`), and the switch's
+   view of the port. "A bounce fixed it" therefore cannot say which was stuck.
+   Escalating in order of blast radius decomposes that.
+
+   One caveat the log states explicitly: recovery *after* a stage is not proof
+   that the stage caused it -- the fault may clear on its own at that moment.
+   One event proves nothing. The same stage clearing it repeatedly, while the
+   cheaper stages before it did not, is what identifies the layer.
 
 The merge is deliberate. **A link bounce resets the interface counters**, so any
 recovery attempt destroys the evidence for the failure that triggered it. Only
@@ -185,6 +202,24 @@ outage snapshots were overwritten two minutes after it came back, which is why
 five blackholes produced no usable evidence. `netsnap-preboot.service` now
 preserves the previous boot's snapshot into `preboot/` before anything runs, and
 `failure/` is never pruned.
+
+### The in-failure counter window
+
+`failure/counters-<ts>.txt` samples the driver counters twice, `COUNTER_WINDOW`
+seconds apart, entirely inside the failure and *before* any recovery attempt.
+
+This exists because the `failure`/`lastgood` pair cannot answer the question
+that matters. `last-good.txt` is refreshed every `GOOD_INTERVAL` (5m), so the
+delta between it and the failure snapshot spans mostly-healthy traffic and is
+dominated by normal work. Two samples taken while the node is isolated are not.
+
+Read it as:
+
+| observation | meaning |
+|---|---|
+| `tx_` climbing, `rx_` flat | frames leave, nothing comes back -- receive-path fault |
+| both flat (file lists nothing) | the interface is wedged entirely |
+| both climbing | the link carries traffic; the fault is above it |
 
 ### Testing it
 
