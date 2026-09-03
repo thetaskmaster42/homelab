@@ -3,13 +3,14 @@
 # serves the app at https://journiv.mongoose-galaxy.ts.net with a real Let's
 # Encrypt certificate.
 #
-# There is deliberately NO LAN Ingress yet, unlike every other app here. Journiv
-# has real authentication, but it has no way to create the first account other
-# than the public signup form — `journiv-admin` can change a password and import
-# data, it cannot create a user — so DISABLE_SIGNUP has to start `false`. On a
-# one-member tailnet the network closes that window; on the LAN it would be open
-# to every device on the subnet. Add journiv-lan.rps-home.com once signup is
-# disabled; the sequence is in docs/decisions/0017-journiv.md.
+# There is deliberately NO LAN Ingress, unlike every other app here.
+#
+# The original reason is gone: signup was open until the first account existed,
+# and DISABLE_SIGNUP is now true. What blocks it instead is the TrustedHost
+# allowlist described below — a request for journiv.rps-home.com is rejected
+# with 400 before it reaches a route, so a second Ingress alone achieves
+# nothing. Lifting that means ENABLE_CORS with both origins, which changes the
+# app's security posture. See docs/decisions/0017-journiv.md.
 #
 # Never funneled. A private journal is the clearest case in this cluster of data
 # that has no business being reachable from the internet.

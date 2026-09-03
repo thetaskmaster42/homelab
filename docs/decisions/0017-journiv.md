@@ -108,9 +108,12 @@ openGym off the LAN plane ([ADR 0015](0015-opengym.md)).
 
 The sequence, in order:
 
-1. register at `https://journiv.mongoose-galaxy.ts.net`
-2. set `DISABLE_SIGNUP=true` in `apps/journiv/kustomization.yaml` and push
-3. then add `apps/journiv/lan-ingress.yaml`
+1. ~~register at `https://journiv.mongoose-galaxy.ts.net`~~ — done, 2026-09-03
+2. ~~set `DISABLE_SIGNUP=true`~~ — done, 2026-09-03
+3. add `apps/journiv/lan-ingress.yaml` — **still blocked**, see below
+
+Steps 1 and 2 closed the signup window. Step 3 did not become free when they
+did, which is what the rest of this section is about.
 
 Step 3 costs more than it does for the other apps, and the first deploy proved
 it. `DOMAIN_NAME` is not merely the base URL Journiv puts in OIDC redirect and
