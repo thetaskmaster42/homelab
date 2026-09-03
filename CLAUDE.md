@@ -117,6 +117,50 @@ This repo pushes to a live cluster the moment `main` moves — ArgoCD reconciles
 from it — so `main` is not a working area. A PR is the only place a change can
 be looked at before it is deployed.
 
+## Network facts that cost real debugging time
+
+- **`ping` cannot test a MetalLB L2 VIP.** MetalLB does not answer ICMP for the
+  VIP, so a VIP that is serving traffic perfectly still fails `ping`. Test with
+  TCP. This is the same trap as kube-router's unconditional ICMP allow above —
+  twice now, ping has produced a confident wrong answer here.
+- **DHCP leases on this network are `LIFETIME=infinity`.** Clients never re-ask,
+  so changing the DHCP DNS option changes nothing until each client is forced to
+  renew (`networkctl renew <if>` on the nodes, `nmcli connection up <conn>` on
+  the laptop — `nmcli device reapply` is NOT enough, it reuses the cached lease).
+  A correct DNS change will look completely broken until you do this.
+- **Pi-hole defaults to `listeningMode LOCAL`**, answering only its own subnet.
+  Pointing another VLAN at it produces a TCP *connection reset* — the port is
+  open, the query is refused. Needs `dns.listeningMode ALL`.
+- **A `Job` cannot be `kubectl replace`d.** The controller generates the
+  immutable `spec.selector` at admission and the manifest has none, so ArgoCD's
+  `Replace=true` alone fails *every* sync after the first with
+  `spec.selector: Invalid value: null: field is immutable`. It needs
+  `Replace=true,Force=true` (delete + recreate). Worse, it fails at its sync
+  wave, and ArgoCD will not start later waves — so the app silently stops
+  receiving *any* change while still reporting Healthy.
+
+## Node health
+
+Every node runs `netsnap-sentinel` (see `scripts/README.md`), deployed by
+`homelab install`. It probes its peers — rendered from `cluster.yaml` into a
+systemd drop-in — captures evidence on failure, then escalates recovery
+cheapest-first: `ip neigh flush` → `ethtool -r` → `ip link down/up` → reboot,
+logging which stage restored traffic.
+
+Two rules when touching it. **Capture must happen before any recovery**, because
+a link bounce resets the interface counters that explain the failure. And
+`netsnap-preboot.service` is enabled but must **never** be restarted by
+`install` — re-running it rotates real pre-outage evidence out of the two-deep
+history. `NETSNAP_DIR` redirects all output, so the capture path is testable
+without rebooting a node.
+
+The open investigation is a link-up-but-no-traffic blackhole: `Link detected:
+yes` at 1Gb/s, zero error counters, kernel silent, ARP to the gateway
+`INCOMPLETE`. Power and thermal are **excluded** (`throttled=0x0`, 43.9 °C), as
+are Calico and EEE. Note that a link bounce resets the Pi's MAC/PHY, the ARP
+cache *and* the switch's port state simultaneously — so "a bounce fixed it"
+attributes nothing, which is why recovery is staged.
+
 ## Commands
 
 There is no build. Everything is validation or cluster operations.
@@ -133,6 +177,26 @@ Exposure is via Tailscale (tailnet `mongoose-galaxy.ts.net`), not NodePorts or
 port forwarding. `ingressClassName: tailscale` gives a private tailnet host; the
 annotation `tailscale.com/funnel: "true"` makes it genuinely public — which for
 an app with no authentication is a decision, not a detail.
+
+Services are **also** reachable on the LAN at `<name>.rps-home.com` via a second
+Ingress (`<name>-lan`, class `traefik`, cert from the `homelab-ca` chain). The
+tailnet Ingress is untouched; both target the same Service and which one you get
+depends on where you are. Adding LAN access to a service is one new file plus a
+line in its kustomization — see [ADR 0016](docs/decisions/0016-lan-ingress.md).
+
+Two services are deliberately excluded and should stay that way. **headlamp** is
+an unauthenticated cluster-admin console, so a LAN Ingress would hand cluster
+admin to every device on the subnet. **opengym** binds its WebAuthn RP ID to the
+tailnet hostname; a second origin has no credentials, and changing `RP_ID`
+permanently invalidates every existing passkey.
+
+All LAN names share one MetalLB VIP (192.168.11.240) and are routed by hostname,
+so **browsing to the bare IP correctly returns 404** — that is the mechanism
+working, not a broken deploy. Pi-hole (192.168.11.2) answers the wildcard
+`*.rps-home.com`. Grafana and ArgoCD each pin a single absolute base URL
+(`root_url`, `global.domain`) to the tailnet name: their UIs use relative paths
+so LAN browsing works, but absolute links they *generate* still point at
+`ts.net`. Neither supports two base URLs.
 
 ## Conventions
 
