@@ -91,8 +91,25 @@ spec:
                   key: uri
           # /api/v1/health, not /. The SPA at `/` is a static file that would
           # answer 200 even with the database unreachable.
+          #
+          # The Host header is NOT optional. In production with CORS disabled,
+          # Journiv installs FastAPI's TrustedHostMiddleware with exactly
+          # [DOMAIN_NAME, localhost, 127.0.0.1] (app/main.py:216). A kubelet
+          # probe sends the pod IP as Host, which is on none of those lists, so
+          # every probe gets a 400 -- from an application that started perfectly
+          # and is serving real traffic. Liveness then kills it at 90+3x20s and
+          # it crashloops forever with nothing in the log but
+          # "Request completed with client error".
+          #
+          # `localhost` rather than DOMAIN_NAME because it is on that list
+          # unconditionally, so renaming the tailnet host cannot break the probe.
           readinessProbe:
-            httpGet: { path: /api/v1/health, port: http }
+            httpGet:
+              path: /api/v1/health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
@@ -101,7 +118,13 @@ spec:
             # serves anything, and that is slow on a Pi.
             failureThreshold: 30
           livenessProbe:
-            httpGet: { path: /api/v1/health, port: http }
+            httpGet:
+              path: /api/v1/health
+              port: http
+              # Same reason as readiness above.
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 90
             periodSeconds: 20
             timeoutSeconds: 5
