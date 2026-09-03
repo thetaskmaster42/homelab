@@ -58,15 +58,16 @@ configMapGenerator:
       # default is also 2; this is stated rather than inherited.
       - GUNICORN_WORKERS=2
 
-      # MUST start false, and this is the one genuinely unsatisfying setting
-      # here. There is no bootstrap admin and no CLI that creates a user, so the
-      # first account can only come from the signup form — closing signup before
-      # anyone has registered locks everybody out permanently.
+      # Closed, now that the first account exists. Step 2 of the sequence in
+      # ADR 0017; the account was registered on 2026-09-03.
       #
-      # The tailnet is what closes the window instead, which is also why there is
-      # no LAN Ingress yet. The sequence, in order:
-      #   1. register at https://journiv.mongoose-galaxy.ts.net
-      #   2. flip this to "true" and push
-      #   3. then, and only then, add the LAN Ingress
-      # See docs/decisions/0017-journiv.md.
-      - DISABLE_SIGNUP=false
+      # It had to START false, which is the unsatisfying part: there is no
+      # bootstrap admin and no CLI that creates a user, so the first account can
+      # only come from the signup form. Closing signup before anyone has
+      # registered locks everybody out permanently — `journiv-admin` can change
+      # a password, not create the user whose password it would change.
+      #
+      # Do NOT flip this back to open it for a second person. Journiv has no
+      # invite mechanism, so re-opening signup re-opens it to everyone who can
+      # reach the app, for as long as it stays open.
+      - DISABLE_SIGNUP=true
