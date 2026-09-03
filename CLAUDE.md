@@ -190,6 +190,12 @@ admin to every device on the subnet. **opengym** binds its WebAuthn RP ID to the
 tailnet hostname; a second origin has no credentials, and changing `RP_ID`
 permanently invalidates every existing passkey.
 
+**journiv** is excluded only until its signup is closed. It has real
+authentication but no way to create the first account except the public signup
+form, so `DISABLE_SIGNUP` starts `false` and the one-member tailnet is what
+closes that window — the LAN would not. Register, set `DISABLE_SIGNUP=true`,
+then add the Ingress. See [ADR 0017](docs/decisions/0017-journiv.md).
+
 All LAN names share one MetalLB VIP (192.168.11.240) and are routed by hostname,
 so **browsing to the bare IP correctly returns 404** — that is the mechanism
 working, not a broken deploy. Pi-hole (192.168.11.2) answers the wildcard

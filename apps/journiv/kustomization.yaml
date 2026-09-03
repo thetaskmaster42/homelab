@@ -1,0 +1,72 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: journiv
+
+resources:
+  - postgres-cluster.yaml
+  - data-pvc.yaml
+  - valkey.yaml
+  - deployment.yaml
+  - celery.yaml
+  - ingress.yaml
+
+images:
+  # Pinned, never `latest`. Upstream publishes `latest` and `0.1.0-beta.24` at
+  # the same digest today, and a per-commit sha tag for every push to main —
+  # so `latest` moves, and this is the same bits with a name that does not.
+  # Verified multi-arch: linux/arm64 is present, which is the gate every image
+  # in this repo has to pass.
+  - name: swalabtech/journiv-app
+    newTag: "0.1.0-beta.24"
+  - name: valkey/valkey
+    newTag: "9.0.6-alpine"
+
+configMapGenerator:
+  # Every non-secret setting shared by the app and the two celery pods. Kustomize
+  # appends a content hash to the name, so changing a value here rolls the pods
+  # — an unhashed ConfigMap would update in place and leave all three running the
+  # previous values until something else happened to restart them.
+  - name: journiv-env
+    literals:
+      - ENVIRONMENT=production
+
+      # Postgres, not the SQLite default. The URL itself comes from the
+      # CloudNativePG Secret; see the DATABASE_URL comment in deployment.yaml.
+      - DB_DRIVER=postgres
+
+      # ONE public base URL, and it is the tailnet name. Journiv uses it to
+      # build OIDC redirect and post-logout URLs, so it cannot express two
+      # origins — the same limitation Grafana and ArgoCD have here.
+      - DOMAIN_NAME=journiv.mongoose-galaxy.ts.net
+      # https, because the tailscale operator terminates TLS in front of this.
+      # Left at the default `http`, Journiv would hand the browser http:// links
+      # back to itself.
+      - DOMAIN_SCHEME=https
+
+      # Valkey, split by database number the way upstream's compose does:
+      #   0  celery broker + results
+      #   1  rate-limit counters
+      #   2  RedBeat schedule
+      - REDIS_URL=redis://valkey:6379/0
+      - CELERY_BROKER_URL=redis://valkey:6379/0
+      - CELERY_RESULT_BACKEND=redis://valkey:6379/0
+      - RATE_LIMIT_STORAGE_URI=redis://valkey:6379/1
+      - REDBEAT_REDIS_URL=redis://valkey:6379/2
+
+      # Two gunicorn workers on a 4-core Pi, sharing the node with three
+      # PostgreSQL instances and everything else in the cluster. The upstream
+      # default is also 2; this is stated rather than inherited.
+      - GUNICORN_WORKERS=2
+
+      # MUST start false, and this is the one genuinely unsatisfying setting
+      # here. There is no bootstrap admin and no CLI that creates a user, so the
+      # first account can only come from the signup form — closing signup before
+      # anyone has registered locks everybody out permanently.
+      #
+      # The tailnet is what closes the window instead, which is also why there is
+      # no LAN Ingress yet. The sequence, in order:
+      #   1. register at https://journiv.mongoose-galaxy.ts.net
+      #   2. flip this to "true" and push
+      #   3. then, and only then, add the LAN Ingress
+      # See docs/decisions/0017-journiv.md.
+      - DISABLE_SIGNUP=false

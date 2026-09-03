@@ -1,0 +1,24 @@
+# /data — media uploads, import/export staging, and logs.
+#
+# ReadWriteMany, deliberately. The app pod and both celery pods mount this same
+# directory: an export is written by a worker and downloaded through the app, so
+# they must see one filesystem rather than three copies. The `nfs` class is the
+# only one here that can do that — local-path is node-pinned and ReadWriteOnce.
+#
+# On `nfs` it is also reclaimPolicy: Retain, so the journal's media survives a
+# `homelab nuke`. It does NOT survive the NAS at 192.168.11.3 dying, and nothing
+# in this cluster is backed up yet.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: journiv-data
+  labels:
+    app: journiv
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  # Named explicitly, like every PVC here. See the comment in postgres-cluster.yaml.
+  storageClassName: nfs

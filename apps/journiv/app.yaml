@@ -1,0 +1,12 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo points UPSTREAM, the way drawio's does: Journiv is third-party, so
+# there is no homebuilt source and no k8s/ base to pull. Upstream ships a
+# kubernetes/manifest.yaml, but it is a single-container SQLite demo with a
+# hardcoded SECRET_KEY and a local-path PVC — every one of which this cluster
+# forbids — so every manifest here is written locally instead.
+name: journiv
+namespace: journiv
+sourceRepo: https://github.com/journiv/journiv-app
+exposure: tailnet

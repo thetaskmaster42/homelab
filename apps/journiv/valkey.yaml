@@ -1,0 +1,97 @@
+# Valkey (the Redis fork upstream ships) is three things at once for Journiv:
+# the Celery broker and result backend (db 0), the rate-limit store (db 1), and
+# the RedBeat schedule lock (db 2). Splitting them by database number is
+# upstream's convention, kept here so the URLs match their docs.
+#
+# emptyDir, not a PVC — every one of those three is derived state. The broker
+# holds in-flight import/export tasks, the rate limiter holds a few minutes of
+# counters, and RedBeat rebuilds its schedule from beat's own config on connect.
+# Losing the lot costs a re-run of an export, not data.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  labels:
+    app: journiv
+    component: valkey
+spec:
+  replicas: 1
+  # Recreate: one instance, and two of them briefly sharing a broker would let
+  # a task be delivered twice.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: journiv
+      component: valkey
+  template:
+    metadata:
+      labels:
+        app: journiv
+        component: valkey
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # valkey:alpine runs as uid/gid 999 and writes only to /data.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: valkey/valkey:9.0.6-alpine
+          imagePullPolicy: IfNotPresent
+          # --save "" turns off RDB snapshots. The default alpine image would
+          # otherwise periodically fork and write a dump to /data, which here is
+          # a tmpfs-backed emptyDir that is discarded anyway — paying the
+          # copy-on-write cost of a fork on a Pi for a file nobody reads.
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - name: valkey
+              containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+# MUST be named `valkey`. The REDIS_URL, CELERY_BROKER_URL, RATE_LIMIT_STORAGE_URI
+# and REDBEAT_REDIS_URL in journiv-env all address it by this hostname.
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  labels:
+    app: journiv
+    component: valkey
+spec:
+  type: ClusterIP
+  selector:
+    app: journiv
+    component: valkey
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: valkey

@@ -1,0 +1,135 @@
+# The Journiv web application: FastAPI under gunicorn, serving the React SPA at
+# `/`, the legacy Flutter SPA at `/legacy/`, and the API at `/api/v1/`. One
+# origin for all three, which is why ENABLE_CORS stays at its default of false.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journiv
+  labels:
+    app: journiv
+    component: app
+  annotations:
+    # Wave 1. The pod cannot start before `journiv-db-app` exists, and that
+    # Secret is published by the CloudNativePG operator only once the Cluster
+    # (wave 0) is up — a pod scheduled ahead of it sits in
+    # CreateContainerConfigError rather than retrying cleanly.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # ONE replica, and this is not tunable. The image's entrypoint runs
+  # `alembic upgrade head` on every start of the `app` role, so a second replica
+  # is a second concurrent migration against the same database. Upstream offers
+  # no flag to separate the two (unlike prep-tracker, which has a migrate Job),
+  # so the constraint is enforced here instead.
+  replicas: 1
+  # Recreate, not RollingUpdate, for the same reason: a rolling update would
+  # briefly run the new pod's migration while the old pod still serves the old
+  # schema.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: journiv
+      component: app
+  template:
+    metadata:
+      labels:
+        app: journiv
+        component: app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # `appuser`, uid 1000, created in the upstream Dockerfile. fsGroup makes
+        # the NFS-backed /data writable by it — the same pattern rh-dashboard
+        # uses against this StorageClass.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: journiv
+          image: swalabtech/journiv-app:0.1.0-beta.24
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # NOT read-only. The entrypoint writes into /data, gunicorn writes
+            # worker temp files under /tmp, and celery-beat writes a pidfile
+            # there — all inside the image's own filesystem.
+            readOnlyRootFilesystem: false
+          envFrom:
+            # Everything that is neither a secret nor role-specific. Generated
+            # with a content hash (see kustomization.yaml), so editing it rolls
+            # the pods instead of leaving them running the old values.
+            - configMapRef:
+                name: journiv-env
+          env:
+            - name: SERVICE_ROLE
+              value: app
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  # Applied by `homelab bootstrap` from the encrypted bundle,
+                  # NOT by ArgoCD — this repo is public and there is no SOPS
+                  # plugin on the repo-server. See ADR 0014.
+                  name: journiv-app-secret
+                  key: secret-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  # Written by CloudNativePG when it creates the Cluster. `uri`
+                  # is already a complete postgresql:// URL, so nothing here has
+                  # to assemble one from parts.
+                  #
+                  # POSTGRES_PASSWORD is deliberately NOT set alongside it:
+                  # Journiv fails startup validation when both are present.
+                  name: journiv-db-app
+                  key: uri
+          # /api/v1/health, not /. The SPA at `/` is a static file that would
+          # answer 200 even with the database unreachable.
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            # 30 x 10s = 5 minutes. The first start of a fresh install runs the
+            # whole alembic history and seeds the prompt library before it
+            # serves anything, and that is slow on a Pi.
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: http }
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits: { memory: 1536Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: journiv-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: journiv
+  labels:
+    app: journiv
+    component: app
+spec:
+  type: ClusterIP
+  selector:
+    app: journiv
+    component: app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
