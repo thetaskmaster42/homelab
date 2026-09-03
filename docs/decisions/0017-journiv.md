@@ -112,10 +112,28 @@ The sequence, in order:
 2. set `DISABLE_SIGNUP=true` in `apps/journiv/kustomization.yaml` and push
 3. then add `apps/journiv/lan-ingress.yaml`
 
-Step 3 is not free either: `DOMAIN_NAME` pins a single absolute base URL, which
-Journiv uses to build OIDC redirect and post-logout links. Those will keep
-pointing at the tailnet name from a LAN browser — the same limitation Grafana
-and ArgoCD have here, and for the same reason. With OIDC off it costs nothing.
+Step 3 costs more than it does for the other apps, and the first deploy proved
+it. `DOMAIN_NAME` is not merely the base URL Journiv puts in OIDC redirect and
+post-logout links — in production with CORS disabled it is also the entire
+allowlist for FastAPI's `TrustedHostMiddleware`, alongside `localhost` and
+`127.0.0.1` (`app/main.py:216`). Measured against the running pod:
+
+```
+Host: <pod IP>              400
+Host: localhost             200
+Host: journiv.rps-home.com  400
+```
+
+So a LAN Ingress does not merely generate links pointing at the tailnet name —
+**every LAN request is rejected before it reaches a route**. Making it work means
+setting `ENABLE_CORS=true` with `CORS_ORIGINS` naming both origins, which
+switches the allowlist to the CORS branch. That is a real change to the app's
+security posture, not an extra Ingress file, and it should be its own decision.
+
+The same middleware is why both probes have to send `Host: localhost`. Without
+it the kubelet sends the pod IP, gets a 400 from an application that started
+perfectly, and liveness crashloops it with nothing in the log but
+"Request completed with client error".
 
 ## What this gives up
 

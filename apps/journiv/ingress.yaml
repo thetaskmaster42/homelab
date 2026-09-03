@@ -14,9 +14,13 @@
 # Never funneled. A private journal is the clearest case in this cluster of data
 # that has no business being reachable from the internet.
 #
-# THE HOSTNAME IS ALSO CONFIGURATION. DOMAIN_NAME in journiv-env must match it —
-# Journiv builds its OIDC redirect and post-logout URLs from that value, so a
-# rename breaks those links until both are changed together.
+# THE HOSTNAME IS ALSO CONFIGURATION, and more load-bearing than it looks.
+# DOMAIN_NAME in journiv-env must match it: in production with CORS disabled,
+# that value IS the TrustedHostMiddleware allowlist (plus localhost and
+# 127.0.0.1). A request arriving under any other Host is rejected with 400
+# before it reaches a route — measured, not assumed. So a rename breaks the app
+# outright, not merely the links it generates, and a second hostname needs
+# ENABLE_CORS/CORS_ORIGINS rather than another Ingress. See ADR 0017.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
