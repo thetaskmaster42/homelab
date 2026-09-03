@@ -1,0 +1,38 @@
+# Journiv's database. PostgreSQL rather than the SQLite default: upstream
+# recommends it for production, and the alternative is a single file on a shared
+# NFS volume that three pods (app, celery-worker, celery-beat) all open at once —
+# which SQLite does not survive.
+#
+# CloudNativePG generates the credentials and publishes them as the Secret
+# `journiv-db-app`; nobody chooses this password and nobody writes it down. That
+# is the shape ADR 0014 names as preferred, and the reason nothing about the
+# database appears in the bootstrap bundle.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: journiv-db
+  labels:
+    app: journiv
+spec:
+  # Three instances, matching prep-tracker: one primary and two replicas, so a
+  # node going away is a failover rather than an outage. The blackhole
+  # investigation in CLAUDE.md is exactly the failure this is insurance against.
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    size: 5Gi
+    # Explicit, and not negotiable: local-path and nfs are BOTH marked default,
+    # so an omitted class resolves to whichever was created last and differs
+    # between rebuilds. Journal entries on node-local disk would be erased by the
+    # next `homelab nuke` with no error anywhere. tests/test_apps.py enforces it.
+    storageClass: nfs
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+  bootstrap:
+    initdb:
+      database: journiv
+      owner: journiv

@@ -1,0 +1,191 @@
+# Celery. Journiv runs import, export and their scheduled cleanup out of band,
+# so without these two the app still works but "Export my journal" never
+# completes — which on beta software that asks you to keep backups is the
+# feature most worth having.
+#
+# Both share the app image, the app database and the /data volume; only
+# SERVICE_ROLE and the command differ.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journiv-celery-worker
+  labels:
+    app: journiv
+    component: celery-worker
+  annotations:
+    # Wave 1, next to the app: same dependency on the CloudNativePG Secret.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: journiv
+      component: celery-worker
+  template:
+    metadata:
+      labels:
+        app: journiv
+        component: celery-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: celery-worker
+          image: swalabtech/journiv-app:0.1.0-beta.24
+          imagePullPolicy: IfNotPresent
+          # The entrypoint is bypassed on purpose, which is the one place this
+          # deployment departs from upstream's compose file.
+          #
+          # docker-entrypoint.sh branches on SERVICE_ROLE and `exec`s celery
+          # BEFORE it ever looks at its arguments, so the tuning flags upstream
+          # passes as compose `command:` are silently discarded — including
+          # --concurrency. Celery then defaults to one prefork child per CPU,
+          # which is four on a Pi 5, each holding a full copy of the app. That
+          # is roughly a gigabyte of resident memory to run one export at a time.
+          #
+          # Calling celery directly is the only way to actually set the flag. The
+          # mkdir replaces the only other thing the entrypoint did for this role;
+          # migrations are NOT run here, deliberately — the app pod owns the
+          # schema and two of them racing is exactly what wave 1 avoids.
+          command:
+            - /bin/sh
+            - -c
+            - >-
+              mkdir -p /data/media /data/logs &&
+              exec /opt/venv/bin/python -m celery -A app.core.celery_app worker
+              --loglevel=info
+              --concurrency=1
+              --max-memory-per-child=300000
+              --max-tasks-per-child=200
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          envFrom:
+            - configMapRef:
+                name: journiv-env
+          env:
+            # Still set, even though the command no longer branches on it: the
+            # image's own HEALTHCHECK and some task code read it.
+            - name: SERVICE_ROLE
+              value: celery-worker
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: journiv-app-secret
+                  key: secret-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: journiv-db-app
+                  key: uri
+          # No HTTP probes: a celery worker serves no port. `celery inspect ping`
+          # is the equivalent, but it costs a Python interpreter start on a Pi
+          # every interval, so liveness only — a wedged worker gets restarted,
+          # and readiness would gate nothing because no Service selects this pod.
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  /opt/venv/bin/python -m celery -A app.core.celery_app inspect ping
+                  -d "celery@$(hostname)" --timeout=10 | grep -q pong
+            initialDelaySeconds: 90
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: journiv-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journiv-celery-beat
+  labels:
+    app: journiv
+    component: celery-beat
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # ONE, always. Beat is a scheduler: a second one would enqueue every periodic
+  # task twice. RedBeat's Redis lock makes that survivable rather than correct.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: journiv
+      component: celery-beat
+  template:
+    metadata:
+      labels:
+        app: journiv
+        component: celery-beat
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: celery-beat
+          image: swalabtech/journiv-app:0.1.0-beta.24
+          imagePullPolicy: IfNotPresent
+          # Here the entrypoint's own branch is exactly right — it already passes
+          # the RedBeat scheduler and the pidfile the healthcheck looks for, and
+          # beat takes no tuning flags worth overriding.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          envFrom:
+            - configMapRef:
+                name: journiv-env
+          env:
+            - name: SERVICE_ROLE
+              value: celery-beat
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: journiv-app-secret
+                  key: secret-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: journiv-db-app
+                  key: uri
+          # Beat writes the pidfile the image's healthcheck reads; check the same
+          # thing here rather than paying for another interpreter start.
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - test -f /tmp/celerybeat.pid && kill -0 "$(cat /tmp/celerybeat.pid)"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 25m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          # No /data mount: beat only enqueues, it never touches a file.

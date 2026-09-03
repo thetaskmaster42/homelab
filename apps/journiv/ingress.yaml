@@ -1,0 +1,41 @@
+# Tailnet-only exposure. `tailscale` ingressClassName comes from the
+# tailscale-operator infra service; it registers a node on the tailnet and
+# serves the app at https://journiv.mongoose-galaxy.ts.net with a real Let's
+# Encrypt certificate.
+#
+# There is deliberately NO LAN Ingress yet, unlike every other app here. Journiv
+# has real authentication, but it has no way to create the first account other
+# than the public signup form — `journiv-admin` can change a password and import
+# data, it cannot create a user — so DISABLE_SIGNUP has to start `false`. On a
+# one-member tailnet the network closes that window; on the LAN it would be open
+# to every device on the subnet. Add journiv-lan.rps-home.com once signup is
+# disabled; the sequence is in docs/decisions/0017-journiv.md.
+#
+# Never funneled. A private journal is the clearest case in this cluster of data
+# that has no business being reachable from the internet.
+#
+# THE HOSTNAME IS ALSO CONFIGURATION. DOMAIN_NAME in journiv-env must match it —
+# Journiv builds its OIDC redirect and post-logout URLs from that value, so a
+# rename breaks those links until both are changed together.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: journiv
+  annotations:
+    # Wave 2, after the workload. An Ingress left in the default wave 0 sits
+    # alongside the CloudNativePG Cluster, and ArgoCD will not start wave 1
+    # until every wave-0 resource is Healthy — a tailscale Ingress is only
+    # Healthy once the operator assigns it an address, so an operator outage
+    # would stop the app from being deployed at all rather than merely from
+    # being reachable. Exposure goes last.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: journiv
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - journiv
