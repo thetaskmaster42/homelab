@@ -1,0 +1,15 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo points UPSTREAM, like drawio and journiv: Memos is third-party, so
+# there is no homebuilt source and no k8s/ base to pull. Every manifest here is
+# written locally.
+#
+# Deployed alongside journiv on purpose. The two overlap — both capture dated
+# personal writing — and the plan is to run both, then keep one. Whichever loses
+# is `git rm -r apps/<name>`, and the ApplicationSet finalizer takes the
+# workloads with it.
+name: memos
+namespace: memos
+sourceRepo: https://github.com/usememos/memos
+exposure: tailnet

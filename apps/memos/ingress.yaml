@@ -1,0 +1,34 @@
+# Tailnet exposure. `tailscale` ingressClassName comes from the
+# tailscale-operator infra service; it registers a node on the tailnet and
+# serves Memos at https://memos.mongoose-galaxy.ts.net with a real Let's
+# Encrypt certificate.
+#
+# Never funneled. Personal notes have no business being reachable from the
+# internet, and this is the same call made for opengym and journiv.
+#
+# Unlike journiv, this app is ALSO on the LAN (lan-ingress.yaml). That is not an
+# inconsistency: Memos validates nothing against a configured hostname, so a
+# second origin costs nothing. See the MEMOS_INSTANCE_URL comment in
+# deployment.yaml and ADR 0018.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: memos
+  annotations:
+    # Wave 2, after the workload. An Ingress left in the default wave 0 sits
+    # alongside the CloudNativePG Cluster, and ArgoCD will not start wave 1
+    # until every wave-0 resource is Healthy -- a tailscale Ingress is only
+    # Healthy once the operator assigns it an address, so an operator outage
+    # would stop Memos being deployed at all rather than merely being
+    # reachable. Exposure goes last.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: memos
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - memos

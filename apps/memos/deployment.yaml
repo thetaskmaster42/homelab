@@ -1,0 +1,107 @@
+# Memos: a single Go binary, ~23 MB compressed on arm64, ~50 MB resident.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memos
+  labels:
+    app: memos
+  annotations:
+    # Wave 1. The pod cannot start before `memos-db-app` exists, and the
+    # CloudNativePG operator publishes that Secret only once the Cluster
+    # (wave 0) is up. A pod scheduled ahead of it sits in
+    # CreateContainerConfigError rather than retrying cleanly.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # One replica. Memos runs its schema migrations on start, and there is no
+  # separate migrate step to hook, so a second replica is a second concurrent
+  # migration -- the same constraint journiv has, for the same reason.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: memos
+  template:
+    metadata:
+      labels:
+        app: memos
+    spec:
+      securityContext:
+        # The image's entrypoint starts as root, chowns /var/opt/memos, then
+        # su-execs down to 10001. Starting as 10001 instead skips that branch
+        # entirely -- the script checks `id -u` and runs the binary directly --
+        # so the container never holds root at all. fsGroup does the ownership
+        # job the chown would have done.
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: memos
+          image: ghcr.io/usememos/memos:0.30.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              # 5230 is set as MEMOS_PORT in the image; the binary's own default
+              # is 8081, so this follows the image rather than the source.
+              containerPort: 5230
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # NOT read-only: the entrypoint and the binary both write under
+            # /var/opt/memos, which is a mounted volume, but the binary also
+            # writes temp files under the root filesystem during uploads.
+            readOnlyRootFilesystem: false
+          env:
+            - name: MEMOS_DRIVER
+              value: postgres
+            - name: MEMOS_DSN
+              valueFrom:
+                secretKeyRef:
+                  # Written by CloudNativePG. `uri` is already a complete
+                  # postgresql:// URL. The driver is lib/pq, which defaults to
+                  # sslmode=require when the DSN does not say -- CNPG serves TLS
+                  # with its own CA, and `require` does not verify the chain, so
+                  # this connects without any sslmode override.
+                  name: memos-db-app
+                  key: uri
+            # MEMOS_INSTANCE_URL is deliberately UNSET. Left empty, Memos trusts
+            # the host of the incoming request for credentialed CORS
+            # (server/cors.go:47), which is what lets the tailnet name and the
+            # LAN name both work as same-origin. Setting it would pin one
+            # canonical origin -- the mistake journiv's DOMAIN_NAME forces on us.
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /var/opt/memos
+            - name: deployment-config
+              # Hardcoded in the binary as DefaultDeploymentConfigurationDir
+              # (store/deployment_config.go:24) and scanned once at startup.
+              # Files not matching memos-*.json are ignored, so sharing the
+              # directory with anything else is safe.
+              mountPath: /etc/secrets
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: memos-data
+        - name: deployment-config
+          configMap:
+            name: memos-deployment-config
