@@ -106,6 +106,24 @@ operator-generated database password, Memos adds **nothing** to
 - **A decision deferred.** Running two overlapping apps is the point, but it is
   still two things to keep patched until one is retired.
 
+## The deploy found one thing the review did not
+
+Memos came up, connected to Postgres, migrated its schema and loaded the
+deployment configuration — and was unreachable. It logged
+`Server running on port 0` and listened on a random ephemeral port.
+
+The cause is not in Memos. Kubernetes injects legacy Docker-link variables for
+every Service in the namespace, and our Service is named `memos`, so the kubelet
+set `MEMOS_PORT=tcp://10.43.x.x:80` — overwriting the `MEMOS_PORT=5230` the image
+sets. Memos reads config through viper's `AutomaticEnv` with prefix `MEMOS`, so
+`GetInt("port")` parsed that URL as `0`.
+
+The app choosing an env prefix equal to its own Service name is what exposes it,
+and that is not unusual. Fixed with `enableServiceLinks: false` plus an explicit
+`MEMOS_PORT`, either of which is sufficient; both are there because the switch
+removes the class of bug and the env var survives someone re-enabling links.
+Recorded in CLAUDE.md, because the next app with a matching prefix will hit it.
+
 ## Consequences
 
 - The data PVC is required even with Postgres: Memos refuses to start without a
