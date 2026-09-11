@@ -26,6 +26,25 @@ spec:
       labels:
         app: memos
     spec:
+      # OFF, and this is load-bearing rather than hygiene.
+      #
+      # Kubernetes injects legacy Docker-link variables for every Service in the
+      # namespace: <SVCNAME>_PORT, <SVCNAME>_SERVICE_HOST and friends. Our
+      # Service is called `memos`, so the kubelet sets
+      # MEMOS_PORT=tcp://10.43.x.x:80 -- clobbering the MEMOS_PORT=5230 the
+      # image sets. Memos reads its config through viper's AutomaticEnv with
+      # prefix MEMOS, so GetInt("port") parses that URL, gets 0, and the server
+      # binds to port 0: the kernel hands it a random ephemeral port and nothing
+      # can reach it. The app logs "Server running on port 0" and is otherwise
+      # completely healthy.
+      #
+      # The explicit MEMOS_PORT below already wins over the injected value, so
+      # either fix alone is enough. Both are here because this switch removes the
+      # whole class of collision -- any app whose env prefix matches its Service
+      # name is exposed to it -- and because these variables are a Docker-era
+      # compatibility feature nothing here uses. Everything addresses everything
+      # else by DNS, the database DSN included.
+      enableServiceLinks: false
       securityContext:
         # The image's entrypoint starts as root, chowns /var/opt/memos, then
         # su-execs down to 10001. Starting as 10001 instead skips that branch
@@ -56,6 +75,13 @@ spec:
             # writes temp files under the root filesystem during uploads.
             readOnlyRootFilesystem: false
           env:
+            # Explicit, matching the image's own default, because an explicit
+            # container env entry takes precedence over an injected service-link
+            # variable of the same name. See enableServiceLinks above for what
+            # happens without it -- and note this line is what keeps the port
+            # correct if anyone ever turns service links back on.
+            - name: MEMOS_PORT
+              value: "5230"
             - name: MEMOS_DRIVER
               value: postgres
             - name: MEMOS_DSN

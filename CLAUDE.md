@@ -131,6 +131,15 @@ be looked at before it is deployed.
 - **Pi-hole defaults to `listeningMode LOCAL`**, answering only its own subnet.
   Pointing another VLAN at it produces a TCP *connection reset* — the port is
   open, the query is refused. Needs `dns.listeningMode ALL`.
+- **Kubernetes clobbers env vars named after your Service.** The kubelet injects
+  legacy Docker-link variables — `<SVCNAME>_PORT=tcp://<ip>:<port>`,
+  `<SVCNAME>_SERVICE_HOST`, and friends — for every Service in the namespace, and
+  they overwrite same-named variables from the image. A Service named `memos`
+  therefore sets `MEMOS_PORT=tcp://10.43.x.x:80`, which is how Memos ended up
+  parsing its listen port as `0` and binding to a random ephemeral port while
+  reporting itself perfectly healthy. Any app whose config prefix matches its
+  Service name is exposed to this. Set `enableServiceLinks: false` — nothing here
+  uses those variables, everything addresses everything else by DNS.
 - **A `Job` cannot be `kubectl replace`d.** The controller generates the
   immutable `spec.selector` at admission and the manifest has none, so ArgoCD's
   `Replace=true` alone fails *every* sync after the first with
