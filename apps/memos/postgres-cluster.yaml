@@ -1,0 +1,38 @@
+# Memos defaults to SQLite, and this cluster is the reason not to take that
+# default: SQLite's own guidance is to avoid network filesystems, and `nfs` is
+# where application data lives here. A SQLite Memos would have to sit on
+# local-path (node-pinned, erased by `homelab nuke`) or a /srv hostPath (the
+# opengym pattern — one SD card, nothing backed up).
+#
+# Postgres costs nothing extra: CloudNativePG is already running, so this is one
+# CR, and the operator generates the credential as `memos-db-app`. Nobody
+# chooses that password and nobody writes it down, which is the shape ADR 0014
+# names as preferred and the reason Memos needs no bootstrap secret at all.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: memos-db
+  labels:
+    app: memos
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    # 5Gi rather than the 1Gi the notes themselves would need. Memos stores
+    # attachments IN THE DATABASE by default rather than on disk, so image
+    # uploads grow this volume, not the data PVC below.
+    size: 5Gi
+    # Explicit, always. local-path and nfs are both marked default, so an
+    # omitted class resolves to whichever was created last and differs between
+    # rebuilds. tests/test_apps.py fails the build without it.
+    storageClass: nfs
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+  bootstrap:
+    initdb:
+      database: memos
+      owner: memos

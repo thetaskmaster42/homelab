@@ -1,0 +1,39 @@
+# LAN access, alongside the tailnet Ingress rather than instead of it. Both
+# resolve to the same Service; which one you reach depends on where you are.
+#
+#   tailnet   memos.mongoose-galaxy.ts.net   real Let's Encrypt cert, from anywhere
+#   LAN       memos.rps-home.com             homelab-ca cert, 192.168.11.240 only
+#
+# This works here and does NOT work for journiv, which is worth stating plainly
+# because the difference is invisible from the manifests: journiv's DOMAIN_NAME
+# doubles as its TrustedHost allowlist, so a second hostname is rejected with
+# 400 before reaching a route. Memos compares the Origin against the host of the
+# request itself, so any hostname that routes here is same-origin and works.
+#
+# See docs/decisions/0016-lan-ingress.md for the one-time step of trusting the
+# homelab-ca root on every device that will browse these.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: memos-lan
+  annotations:
+    cert-manager.io/cluster-issuer: homelab-ca
+    # Wave 2, matching the tailnet Ingress next door and for the same reason.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: memos.rps-home.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: memos
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - memos.rps-home.com
+      secretName: memos-lan-tls

@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: memos
+
+resources:
+  - postgres-cluster.yaml
+  - data-pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  # A second Ingress for LAN access. Deliberately a separate file rather than
+  # more rules on the first: the two have different classes, different
+  # certificate authorities and different audiences, and merging them would hide
+  # that a change to one does not affect the other.
+  - lan-ingress.yaml
+
+images:
+  # Pinned, never `latest`. Verified multi-arch with linux/arm64 present, which
+  # is the gate every image in this repo has to pass.
+  - name: ghcr.io/usememos/memos
+    newTag: "0.30.0"
+
+configMapGenerator:
+  # Memos reads declarative instance settings from /etc/secrets at startup
+  # (store/deployment_config.go), keyed by filename, and anything configured
+  # this way becomes READ-ONLY in the admin UI -- the API refuses to update a
+  # deployment-configured setting.
+  #
+  # That is what makes Memos a better fit than journiv for this cluster's
+  # habits: journiv's DISABLE_SIGNUP had to start `false` because the first
+  # account can only come from the signup form, leaving a window open. Memos
+  # creates its first user through a separate atomic path
+  # (CreateUserIfNoUsers), and the registration check is skipped for that admin
+  # -- so signup can be shut from the very first boot and the first account
+  # still works. There is no window to close afterwards.
+  #
+  # The filename is load-bearing: it must match ^memos-instance-setting-[a-z0-9-]+\.json$
+  # or the file is ignored with only a log line to say so.
+  - name: memos-deployment-config
+    files:
+      - deployment-config/memos-instance-setting-general.json

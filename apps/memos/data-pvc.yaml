@@ -1,0 +1,26 @@
+# /var/opt/memos.
+#
+# Required even though the database is Postgres: Memos refuses to start without
+# a writable data directory (internal/profile/profile.go — it stats the path,
+# write-tests it, and falls back to the working directory otherwise). With the
+# postgres driver almost nothing lands here, so this is deliberately small.
+#
+# It is also where attachments would go if the storage type is ever switched
+# from DATABASE to LOCAL in the admin UI. Resize before doing that.
+#
+# ReadWriteOnce, not RWX: one pod mounts this, and saying so is more honest than
+# claiming a sharing property nothing uses.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memos-data
+  labels:
+    app: memos
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # reclaimPolicy on this class is Retain, so the directory outlives the cluster.
+  storageClassName: nfs
