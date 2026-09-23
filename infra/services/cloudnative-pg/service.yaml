@@ -1,16 +1,23 @@
-# Central PostgreSQL for applications, via the CloudNativePG operator.
+# The CloudNativePG operator, and ONLY the operator.
 #
-# The chart installs only the operator and its CRDs. The actual database is a
-# `Cluster` custom resource in manifests/, which is why this uses the two-part
-# pattern — the CR cannot apply until the CRD the chart brings exists.
+# There is deliberately no shared `Cluster` here any more. Each application
+# declares its own single-instance Cluster next to its own manifests, so a
+# database arrives and leaves with the application that owns it. See
+# docs/decisions/0020-one-postgres-per-app.md for why the shared cluster was
+# removed, and docs/postgres.md for the shape that replaced it.
 #
-# An operator rather than a plain postgres chart because replication, failover,
-# backups and rolling minor upgrades are the interesting parts of running a
+# extraManifests is therefore "false" and there is no manifests/ directory --
+# tests/test_service_config.py asserts those two agree, because a "true" with no
+# directory generates an Application pointing at a path that does not exist.
+#
+# An operator rather than a plain postgres chart because failover, rolling minor
+# upgrades and (eventually) barman backups are the interesting parts of running a
 # database, and CloudNativePG models them as Kubernetes primitives instead of
-# hiding them in a StatefulSet.
+# hiding them in a StatefulSet. That value does not depend on there being one
+# big cluster -- it applies per application just as well.
 name: cloudnative-pg
 namespace: cnpg-system
-extraManifests: "true"
+extraManifests: "false"
 chart:
   repo: https://cloudnative-pg.github.io/charts
   name: cloudnative-pg
