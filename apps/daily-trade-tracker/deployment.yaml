@@ -1,0 +1,134 @@
+# Daily Trade Tracker: FastAPI + uvicorn, SQLAlchemy, a small static frontend.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # `trade-tracker`, not `daily-trade-tracker`, matching the names the source
+  # repo's own manifests used so the two are recognisably the same thing.
+  name: trade-tracker
+  labels:
+    app: trade-tracker
+  annotations:
+    # Wave 1. The pod cannot start before `trade-tracker-db-app` exists, and the
+    # CloudNativePG operator publishes that Secret only once the Cluster
+    # (wave 0) is up. Scheduled ahead of it, the pod sits in
+    # CreateContainerConfigError rather than retrying cleanly.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # ONE replica. app/main.py calls Base.metadata.create_all(engine) at import
+  # time, so every pod start issues DDL. create_all is idempotent, but two pods
+  # racing it on a fresh database is a needless risk and there is no separate
+  # migrate step to hook -- the same constraint journiv and memos have.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trade-tracker
+  template:
+    metadata:
+      labels:
+        app: trade-tracker
+    spec:
+      # The image is in a PRIVATE GHCR package, so the kubelet needs a
+      # registry credential. Applied by `homelab bootstrap` from the encrypted
+      # bundle -- see docs/decisions/0019-daily-trade-tracker.md for how it is
+      # created. Without it: ImagePullBackOff with "unauthorized".
+      imagePullSecrets:
+        - name: ghcr-pull
+      # OFF. Nothing here reads Docker-link variables, and a Service named
+      # `trade-tracker` would inject TRADE_TRACKER_PORT=tcp://... into every
+      # pod. Harmless for this app's settings today, but it is the trap that
+      # made Memos bind to a random port, so it stays off by default.
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        # 1000:1000 -- verified by reading /etc/passwd and home/appuser out of
+        # the image's own layer, not assumed from `useradd` defaults.
+        #
+        # runAsUser is NOT optional here. The image declares `USER appuser`, a
+        # NAME, and with runAsNonRoot set the kubelet refuses to start a
+        # container whose user it cannot prove is non-root:
+        # "container has runAsNonRoot and image has non-numeric user (appuser)".
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: trade-tracker
+          image: ghcr.io/thetaskmaster42/daily-trade-tracker:sha-844b9f4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # NOT read-only. app/db.py runs DATA_DIR.mkdir(exist_ok=True) at
+            # import unconditionally, even on Postgres. /data already exists in
+            # the image owned by uid 1000, so the call is a no-op -- but a
+            # read-only root filesystem would still fail it and crash the app
+            # before FastAPI starts.
+            readOnlyRootFilesystem: false
+          env:
+            # --- the database URL, assembled rather than taken -------------
+            #
+            # CloudNativePG publishes a ready-made `uri` key, and it CANNOT be
+            # used here. Its scheme is `postgresql://`, which SQLAlchemy 2.0
+            # resolves to the psycopg2 driver -- and this image installs
+            # `psycopg[binary]` (psycopg 3) and nothing else. Using `uri` fails
+            # at import with ModuleNotFoundError: No module named 'psycopg2',
+            # which looks like a broken image rather than a wrong URL.
+            #
+            # So the URL is composed from the Secret's component keys with the
+            # explicit `+psycopg` dialect. Kubernetes expands $(VAR) from env
+            # entries defined EARLIER in this list, so the order below matters.
+            #
+            # Safe because CloudNativePG generates a 64-character password from a
+            # URL-safe alphabet -- checked across all four CNPG clusters in this
+            # cluster, none needing percent-encoding. A password containing `@`
+            # or `/` would silently corrupt this URL, so if that ever changes,
+            # this composition is the thing that breaks.
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef: { name: trade-tracker-db-app, key: username }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: trade-tracker-db-app, key: password }
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef: { name: trade-tracker-db-app, key: host }
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef: { name: trade-tracker-db-app, key: port }
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef: { name: trade-tracker-db-app, key: dbname }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+            # ---------------------------------------------------------------
+            - name: TZ
+              value: "America/Los_Angeles"
+          # /healthz is a static {"status":"ok"} -- it does NOT touch the
+          # database, so these probes cannot detect a dead DB. That is covered
+          # instead by create_all() running at import: a pod that cannot reach
+          # Postgres crashes on startup rather than serving a broken app. Do not
+          # "fix" the probe expecting it to catch DB loss; it never will.
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          # No volume. SQLite is the source repo's LOCAL-TESTING path only; in
+          # this cluster DATABASE_URL is always set and Postgres is the only
+          # store. /data is never written to.

@@ -193,7 +193,7 @@ tailnet Ingress is untouched; both target the same Service and which one you get
 depends on where you are. Adding LAN access to a service is one new file plus a
 line in its kustomization — see [ADR 0016](docs/decisions/0016-lan-ingress.md).
 
-Three services are deliberately excluded and should stay that way. **headlamp** is
+Four services are deliberately excluded and should stay that way. **headlamp** is
 an unauthenticated cluster-admin console, so a LAN Ingress would hand cluster
 admin to every device on the subnet. **opengym** binds its WebAuthn RP ID to the
 tailnet hostname; a second origin has no credentials, and changing `RP_ID`
@@ -207,6 +207,16 @@ it needs `ENABLE_CORS=true` with both origins. That same middleware is why the
 pod's probes must send `Host: localhost`; without it the kubelet's pod-IP Host
 takes a 400 and liveness crashloops a perfectly healthy app. See
 [ADR 0017](docs/decisions/0017-journiv.md).
+
+**daily-trade-tracker** has **no authentication at all** — unauthenticated
+`POST`, `PUT` and `DELETE` on `/trades`. A LAN Ingress would give every device on
+the subnet write access to the trading journal, so it stays tailnet-only until
+auth exists upstream. It is also the only app whose image comes from a **private**
+GHCR package, so it needs the `ghcr-pull` secret from the bootstrap bundle and
+its manifests must be written locally — ArgoCD's repo-server cannot authenticate
+to `raw.githubusercontent.com`, which rules out prep-tracker's remote-base
+pattern for any private source. See
+[ADR 0019](docs/decisions/0019-daily-trade-tracker.md).
 
 All LAN names share one MetalLB VIP (192.168.11.240) and are routed by hostname,
 so **browsing to the bare IP correctly returns 404** — that is the mechanism

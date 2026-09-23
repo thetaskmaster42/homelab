@@ -1,0 +1,45 @@
+# The database, created as part of this installation rather than assumed to
+# exist. "The DB runs on the NAS" is satisfied by the storage class, not by a
+# hand-built Postgres on `portal`: CloudNativePG runs the engine in-cluster and
+# the DATA lives on NFS, which is `portal` (192.168.11.3) today and the TrueNAS
+# box later. Moving it is then a storage migration, not an application change --
+# the class name `nfs` does not change.
+#
+# CloudNativePG also generates the credential and publishes it as
+# `trade-tracker-db-app`. Nobody chooses that password and nobody writes it down,
+# which is the shape ADR 0014 prefers and the reason no database credential
+# appears in the bootstrap bundle.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: trade-tracker-db
+  labels:
+    app: trade-tracker
+spec:
+  # Three instances, matching every other CNPG cluster here: one primary and two
+  # replicas, so losing a node is a failover rather than an outage. That matters
+  # more than usual while k3s-server is still blackholing several times a day.
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    # A trade journal is rows of numbers; 2Gi is already generous. The bound is
+    # the row count, and there is no media here.
+    size: 2Gi
+    # Explicit, always. local-path and nfs are BOTH marked default, so an omitted
+    # class resolves to whichever was created last and differs between rebuilds.
+    # tests/test_apps.py fails the build without it.
+    storageClass: nfs
+
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+
+  bootstrap:
+    initdb:
+      # Named to match what the application's own README assumed
+      # (postgresql://trade@.../trade_tracker), so anyone comparing the two sees
+      # the same names. The URL itself is composed from the generated Secret --
+      # see deployment.yaml.
+      database: trade_tracker
+      owner: trade

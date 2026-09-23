@@ -1,0 +1,19 @@
+# Registration read by argocd/registry/appset-apps.yaml. Only these four fields
+# are consumed, and missingkey=error means all four must be present.
+#
+# sourceRepo is PRIVATE (github.com/thetaskmaster42/tools), which shapes two
+# things here:
+#
+#   1. Every manifest is written locally rather than pulled as a remote
+#      kustomize base. prep-tracker fetches its k8s/ dir from
+#      raw.githubusercontent.com pinned to a sha, but ArgoCD's repo-server
+#      cannot authenticate to raw URLs, so that pattern is unavailable for a
+#      private source. This is the drawio shape instead.
+#   2. The image needs a pull secret. See docs/decisions/0019-daily-trade-tracker.md.
+#
+# ArgoCD itself needs NO credential for `tools` — it only reads THIS repo. The
+# only component that talks to the private registry is the kubelet.
+name: daily-trade-tracker
+namespace: daily-trade-tracker
+sourceRepo: https://github.com/thetaskmaster42/tools
+exposure: tailnet

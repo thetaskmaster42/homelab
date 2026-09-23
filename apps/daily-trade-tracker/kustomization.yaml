@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: daily-trade-tracker
+
+resources:
+  - postgres-cluster.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  # No lan-ingress.yaml. The app has no authentication -- see ingress.yaml.
+
+images:
+  # Pinned to the sha tag, never `latest`, and this app is the clearest
+  # illustration of why that rule exists: the PREVIOUS build (sha-e99dfbe) was
+  # amd64-only, so `latest` pointed at an image that could not run on this
+  # cluster at all. sha-844b9f4 is multi-arch and today happens to share
+  # `latest`'s digest (sha256:314bf198...) -- verified, not assumed.
+  - name: ghcr.io/thetaskmaster42/daily-trade-tracker
+    newTag: "sha-844b9f4"
