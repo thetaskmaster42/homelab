@@ -16,10 +16,17 @@ metadata:
   labels:
     app: trade-tracker
 spec:
-  # Three instances, matching every other CNPG cluster here: one primary and two
-  # replicas, so losing a node is a failover rather than an outage. That matters
-  # more than usual while k3s-server is still blackholing several times a day.
-  instances: 3
+  # ONE instance, matching every other CNPG cluster here since ADR 0020.
+  #
+  # Replicas here would all write to the same NAS, so replication protects
+  # against the one failure mode this lab does not have, while nothing protects
+  # against the ones it does -- a bad migration or a wrong DELETE reaches every
+  # copy instantly. The capacity goes to barman backups instead.
+  #
+  # The PVC is RWO but the volume is NFS, which does not enforce that like a
+  # block device, so the pod reschedules onto another node and reattaches: node
+  # loss costs minutes rather than seconds, and no data.
+  instances: 1
   primaryUpdateStrategy: unsupervised
 
   storage:
