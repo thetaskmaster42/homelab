@@ -1,210 +1,183 @@
 # PostgreSQL
 
-One shared PostgreSQL cluster in the `databases` namespace, run by the
-CloudNativePG operator. Applications get a database and a role inside it rather
-than each running their own instance.
+**One CloudNativePG `Cluster` per application, with one instance each.** There is
+no shared database. The operator is infrastructure; every database is part of the
+application that owns it.
+
+See [ADR 0020](decisions/0020-one-postgres-per-app.md) for why the shared cluster
+was removed after running for weeks with zero consumers, and why three instances
+turned out to be theatre.
 
 ## How it gets installed
 
-Two Applications, from one directory, via the `extraManifests` pattern:
+`infra/services/cloudnative-pg/` installs the **operator only** —
+`extraManifests: "false"`, no `manifests/` directory. Each application then
+declares its own `Cluster` beside its own manifests:
 
 ```
-infra/services/cloudnative-pg/
-├── service.yaml              # chart: cloudnative-pg 0.29.0 -> ns cnpg-system
-├── values.yaml               # operator tuning only
-└── manifests/
-    └── cluster.yaml          # Namespace "databases" + the Cluster CR
+apps/journiv/postgres-cluster.yaml         journiv-db   → ns journiv
+apps/memos/postgres-cluster.yaml           memos-db     → ns memos
+apps/daily-trade-tracker/postgres-cluster.yaml
+                                           trade-tracker-db → ns daily-trade-tracker
+apps/prep-tracker/kustomization.yaml       prep-tracker-db (remote base, patched)
 ```
 
-`service.yaml` sets `extraManifests: "true"`, so `appset-infra` generates
-`cloudnative-pg` (the Helm chart, operator only) and `appset-infra-config`
-generates `cloudnative-pg-config` (the raw CRs). The CR Application retries
-indefinitely until the CRDs the chart installs exist — the two cannot be
-ordered, because sync waves do not sequence separate Applications.
+**Nothing creates database pods directly.** A `Cluster` is declared; the operator
+watches for it and builds everything else. That indirection is why
+`kubectl get pods -n memos` shows objects with no matching manifest in this repo.
 
-An operator rather than a plain postgres chart because replication, failover and
-rolling upgrades are the interesting parts of running a database, and
-CloudNativePG models them as Kubernetes objects instead of hiding them inside a
-StatefulSet you then have to reason about by hand.
+An operator rather than a plain postgres chart because failover, rolling minor
+upgrades and (eventually) barman archiving are the interesting parts of running a
+database, and CloudNativePG models them as Kubernetes objects rather than hiding
+them in a StatefulSet you then reason about by hand. None of that value depended
+on there being one big cluster.
 
-**Nothing creates the database pods directly.** `manifests/cluster.yaml` declares
-a `Cluster` resource; the operator watches for it and builds everything else.
-That indirection is why `kubectl get pods -n databases` shows objects with no
-corresponding manifest anywhere in this repo.
+## Why per-app, briefly
+
+Two arguments carry it; the rest is noise.
+
+1. **Extensions and major versions are cluster-wide.** Immich needs VectorChord in
+   `shared_preload_libraries`. In a shared cluster every application inherits one
+   application's extensions and engine version.
+2. **Lifecycle.** `git rm -r apps/memos` takes its database with it. A shared
+   cluster leaves an orphaned database and role — the breakage the
+   `resources-finalizer` exists to prevent.
+
+It also removes the old **namespace problem** for free. Secrets are
+namespace-scoped, so an app in `interview` could never read a Secret in
+`databases`; that used to need `Database`/`DatabaseRole` CRDs, a
+secret-replicating controller, or a secrets engine. With a per-app cluster the
+operator writes `<cluster>-db-app` straight into the namespace that needs it.
 
 ## What the operator builds
 
-From `spec.instances: 2`:
+From `spec.instances: 1`:
 
 | Object | Detail |
 |---|---|
-| `postgres-1`, `postgres-2` | one primary, one streaming replica |
-| `postgres-rw`, `postgres-ro`, `postgres-r` | three Services (below) |
-| `postgres-1`, `postgres-2` PVCs | 10Gi each, `nfs` |
-| `postgres-app` | application credentials, `kubernetes.io/basic-auth` |
-| `postgres-ca`, `postgres-server`, `postgres-replication` | TLS for client and replication traffic |
+| `<cluster>-1` | the primary — and the only instance |
+| `<cluster>-rw`, `-ro`, `-r` | three Services (below) |
+| `<cluster>-1` PVC | on `nfs`, always named explicitly |
+| `<cluster>-app` | application credentials, `kubernetes.io/basic-auth` |
+| `<cluster>-ca`, `-server`, `-replication` | TLS for client and replication traffic |
 
-Current placement, with `enablePodAntiAffinity` doing its job:
+## One instance, and what that costs
 
-```
-postgres-1   k3s-worker-1   primary
-postgres-2   k3s-worker-2   replica
-```
+Replicas protected against the failure this lab does not have. Every volume is on
+the same NAS, so `portal` going away took primary and replica together; and a
+k3s-server blackhole removes the API server, at which point CNPG's instance
+manager exits on every node at once. ~1,900 accumulated postgres restarts were
+correlated failure being counted three times per cluster, not resilience.
 
-That separation is the entire point of the replica. On one node it would protect
-against a corrupt volume and nothing else.
+**Availability is not zero at one instance.** The PVC is `ReadWriteOnce` but the
+volume is NFS, which does not enforce that the way a block device does, so the pod
+reschedules onto another node and reattaches. Node loss costs minutes (bounded by
+the node-not-ready eviction timeout) instead of seconds, and no data.
+
+What is genuinely given up: fast failover, and read replicas nothing was using.
 
 ## Why the nfs class, despite the case against it
 
-This cluster used to run on `local-path`, and the argument for that was sound:
+The argument for `local-path` was sound while there were replicas:
 
-> CloudNativePG gets durability from **streaming replication between nodes**,
-> not from shared storage. Each instance owns a private local volume and the
-> replica holds a continuously-updated copy. Losing a node means failing over to
-> the replica, not moving a volume — so node-pinning, the thing NFS exists to
-> solve, is not a problem here. PostgreSQL also depends on strict `fsync`
-> semantics, and that is exactly what NFS is worst at.
+> CloudNativePG gets durability from **streaming replication between nodes**, not
+> from shared storage. PostgreSQL also depends on strict `fsync` semantics, and
+> that is exactly what NFS is worst at.
 
-[ADR 0006](decisions/0006-nfs-default-storage.md) overrode it. `local-path` does
-still exist — [ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)
-brought it back for the monitoring stack — but database data deliberately stays
-on `nfs`. `homelab nuke` erases every `local-path` volume, and application data is
-the one thing here that cannot be reconstructed.
+[ADR 0006](decisions/0006-nfs-default-storage.md) overrode it, and with one
+instance the first half of that argument no longer applies at all. What remains
+decisive is that **`homelab nuke` erases every `local-path` volume**, and
+application data is the one thing here that cannot be reconstructed.
 
-Two consequences of being on NFS matter specifically here, and neither is
-hypothetical.
+The `fsync` caveat still stands and is now unmitigated: Postgres treats a
+completed `fsync` as durable, an NFS server that acknowledges early breaks that
+across a power cut, and Postgres cannot detect it — the damage surfaces later as
+a corrupt page. `hard` mounts cover a NAS *outage* cleanly (block, then resume);
+they do nothing for a power cut on `portal` mid-write.
 
-**The replica no longer protects against storage loss.** Both instances write to
-`portal`. `enablePodAntiAffinity` still puts them on different nodes and still
-covers node failure, kernel panics and evictions — the common failures in this
-lab. It does not cover the NAS, which is now underneath both copies. Physical
-replication protects against losing a *server*, never against losing the storage
-both servers share.
-
-**`fsync` is now a trust assumption rather than a guarantee.** Postgres treats a
-completed `fsync` as durable. An NFS server that acknowledges before the write
-reaches disk breaks that across a power cut, and Postgres cannot detect it — the
-damage appears later as a corrupt page. The `hard` mount option covers the
-*outage* case cleanly (Postgres blocks, then resumes); it does nothing for a
-power cut on `portal` mid-write.
-
-### What this means in practice
-
-**Backups are now the only real protection, and they do not exist.** Under
-`local-path` the second instance was an independent copy on independent
-hardware; it is not any more. Until barman is configured against a target that
-is not `portal`, the honest recovery story for this cluster is *reinitialise
-empty*. Treat that as the top of the backlog, not a nice-to-have.
+**So backups are the only real protection, and they still do not exist.** See the
+last section.
 
 ## The three Services
 
-They differ only in their selector, and that difference is the whole feature:
+They differ only in their selector, and with one instance all three resolve to
+the same pod — which is exactly why you should still use the right one. When an
+app later grows a replica, code written against `-rw` keeps working.
 
 | Service | Selector | Use for |
 |---|---|---|
-| `postgres-rw` | `instanceRole: primary` | **writes** — and reads that must see them |
-| `postgres-ro` | `instanceRole: replica` | read-only queries, reporting, dashboards |
-| `postgres-r` | `podRole: instance` | any instance, primary included |
+| `<cluster>-rw` | `instanceRole: primary` | **writes** — and reads that must see them |
+| `<cluster>-ro` | `instanceRole: replica` | read-only queries (nothing today) |
+| `<cluster>-r` | `podRole: instance` | any instance, primary included |
 
-`instanceRole` is a **label the operator moves during failover**. When the
-primary dies and the replica is promoted, the operator relabels the pods and
-`postgres-rw` starts resolving to the new primary — with no DNS change, no
-config change, and no application restart. Applications keep one hostname
-forever.
+`instanceRole` is a **label the operator moves during failover**, so `-rw` follows
+the primary with no DNS change, no config change and no application restart.
 
-The corollary: **never connect to a pod directly.** `postgres-1` is only the
-primary until it isn't.
-
-Fully qualified, from any namespace:
-
-```
-postgres-rw.databases.svc.cluster.local:5432
-postgres-ro.databases.svc.cluster.local:5432
-```
-
-Note `postgres-ro` serves replicas, so it reflects replication lag. Read your own
-writes through `postgres-rw`.
+The corollary holds regardless of instance count: **never connect to a pod
+directly.** `<cluster>-1` is only the primary until it isn't.
 
 ## How applications connect
 
-`postgres-app` carries everything needed, already assembled:
+`<cluster>-app` carries everything, already assembled:
 
 | Key | Contents |
 |---|---|
-| `username`, `user` | `app` |
-| `password` | generated by the operator |
-| `dbname` | `app` |
-| `host`, `port` | `postgres-rw`, `5432` |
+| `username`, `user` | the `owner` from `bootstrap.initdb` |
+| `password` | generated by the operator, 64 chars, URL-safe |
+| `dbname` | the `database` from `bootstrap.initdb` |
+| `host`, `port` | `<cluster>-rw`, `5432` |
 | `uri`, `jdbc-uri` | connection strings, short host |
 | `fqdn-uri`, `fqdn-jdbc-uri` | connection strings, `*.svc.cluster.local` |
 | `pgpass` | ready for `PGPASSFILE` |
 
-> **The `*-uri` keys embed the password.** Never echo them, log them, or paste
-> them into an issue — that is a leak with no undo. Mount them; do not print
-> them.
+> **The `*-uri` keys embed the password.** Never echo, log, or paste them. Mount
+> them; do not print them.
 
-### The namespace problem
+### The `uri` key is not always usable — check the driver
 
-Secrets are namespace-scoped. An application in `interview` **cannot** read
-`postgres-app` in `databases`:
+`uri` uses the scheme `postgresql://`. **SQLAlchemy 2.0 resolves that to
+psycopg2**, so an application that ships only `psycopg[binary]` (psycopg 3) fails
+at import with `ModuleNotFoundError: No module named 'psycopg2'` — which reads as
+a broken image rather than a wrong connection string. daily-trade-tracker hit
+exactly this.
 
+The fix is to compose the URL with an explicit dialect from the component keys,
+relying on Kubernetes expanding `$(VAR)` from earlier env entries:
+
+```yaml
+- name: DATABASE_URL
+  value: "postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
 ```
-$ kubectl -n interview get secret postgres-app
-Error from server (NotFound): secrets "postgres-app" not found
-```
 
-So an app cannot simply reference it. There are three honest ways forward, in
-increasing order of how much they are worth:
-
-**1. A per-application database and role, declared.** The operator ships
-`Database` and `DatabaseRole` CRDs, so each app gets its own database and
-credentials inside the shared cluster, with its own Secret created in its own
-namespace. This is the right default: one compromised app cannot read another's
-tables, and `DROP` blast radius is one database.
-
-**2. Replicate the Secret.** A controller copies `postgres-app` into each
-namespace that needs it. Quick, but every app then shares one role with rights
-over the whole `app` database, and rotation has to fan out.
-
-**3. Dynamic credentials from a secret manager.** A database secrets engine
-issues a short-lived PostgreSQL role per application on demand and revokes it on
-expiry. Nothing static is stored anywhere and rotation stops being an event.
-
-This is the best answer and is **not currently available**: OpenBao was deployed
-for exactly this and removed without ever being used, because no application had
-reached the point of needing it. See
-[ADR 0014](decisions/0014-sops-as-the-only-secret-manager.md). A working,
-automated implementation is preserved on the `feature-openboa` branch, and an
-application that genuinely needs per-role credentials is the thing that should
-bring it back.
-
-Until one of these is in place, credentials stay as the operator-generated
-`postgres-app` Secret. Note that `prep-tracker` does not consume this shared
-cluster at all: it runs its own CloudNativePG `Cluster` in the `interview`
-namespace, which names no `storageClassName` and so inherits the `nfs` default
-like everything else.
+Safe because the operator's generated password is 64 characters from a URL-safe
+alphabet — checked across every CNPG cluster here. A password containing `@` or
+`/` would silently corrupt the URL, so that is the assumption to re-check if
+CNPG ever changes its generator.
 
 ## Operating it
 
 ```sh
-# health, and which instance is currently primary
-kubectl -n databases get cluster postgres
+# health, and which instance is primary
+kubectl -n <ns> get cluster <cluster>
 
-# a psql shell on the primary
-kubectl -n databases exec -it postgres-1 -- psql -U postgres
+# a psql shell
+kubectl -n <ns> exec -it <cluster>-1 -- psql -U postgres
 
-# rotate the application password: delete the Secret, the operator regenerates
-# it AND applies it to the role. Verify the old one fails afterwards.
-kubectl -n databases delete secret postgres-app
+# rotate the application password: delete the Secret and the operator
+# regenerates it AND applies it to the role. Verify the old one then fails.
+kubectl -n <ns> delete secret <cluster>-app
 ```
 
-Scaling to three instances is a one-line change to `spec.instances` in
-`manifests/cluster.yaml`; the operator provisions and syncs the new replica.
+Adding a replica is a one-line change to `spec.instances`. Do it per application,
+with a comment saying why that application needs it — not by copy-paste.
 
 ## Not yet done
 
-No backups. `spec.backup` is unset, so there is no WAL archiving and no
-point-in-time recovery — two synchronised copies of a table someone dropped are
-still two copies of a dropped table. Replication is availability, not backup.
-CloudNativePG can archive to S3-compatible storage or a volume; the NAS is the
-obvious target, and this is the largest gap in the current setup.
+**No backups, on any cluster.** `spec.backup` is unset everywhere, so there is no
+WAL archiving and no point-in-time recovery. Replication was never a substitute:
+copies of a table someone dropped are still copies of a dropped table, and now
+there is only one copy.
+
+CloudNativePG archives to S3-compatible storage. MinIO on the NAS is the obvious
+target. **This is the highest-priority gap in the repo** — and reducing replicas
+(ADR 0020) deliberately made it more urgent rather than less.
