@@ -36,22 +36,27 @@ manifests here, `sourceRepo` as an annotation pointing upstream.
 
 ## The four things that would have broken it
 
-### 1. The image was amd64-only, and `latest` was the trap
+### 1. Arch — closed upstream, and the package was renamed
 
-At first review `ghcr.io/thetaskmaster42/daily-trade-tracker:latest` published
-`linux/amd64` only — an instant `exec format error` on every node here. That has
-since been fixed upstream, and the tags now tell the story plainly:
+At first review the image published `linux/amd64` only: an instant
+`exec format error` on every node here. Upstream now sets
+`platforms: linux/amd64,linux/arm64` and its CI tests on both architectures plus
+a real Postgres 16, so the gate is genuinely closed — re-verified against the
+registry rather than read off the workflow.
 
-| Tag | Arches |
+The package was also **renamed**: `daily-trade-tracker` →
+`tool-packages-daily-trade-tracker`. The old name still exists in GHCR with its
+stale, partly amd64-only tags, so a typo pulls a real but abandoned image instead
+of failing loudly.
+
+| Tag (new package) | Arches |
 |---|---|
-| `sha-e99dfbe` | `linux/amd64` |
-| `sha-844b9f4` | `linux/amd64`, **`linux/arm64`** |
-| `latest` | currently the same digest as `sha-844b9f4` |
+| `sha-e667131` | `linux/amd64`, `linux/arm64` |
+| `sha-1b91a17` | `linux/amd64`, **`linux/arm64`** ← pinned, = HEAD of main |
+| `latest` | same digest as `sha-1b91a17` |
 
-So `latest` was pointing at an unrunnable image one build ago. Pinning
-`sha-844b9f4` is not bookkeeping here; it is the difference between a deploy and
-a crashloop. **Re-check the arch of any new tag before bumping it** — nothing in
-this repo's CI can check an image it has not been told about.
+**Re-check the arch of any new tag before bumping it** — nothing in this repo's CI
+can validate an image it has not been told about.
 
 ### 2. CloudNativePG's `uri` key cannot be used
 
@@ -109,6 +114,28 @@ It cannot engage as configured: the five `secretKeyRef` entries mean a missing
 Secret is `CreateContainerConfigError`, and a missing env var leaves a literal
 `$(DB_PASSWORD)` in the URL, which fails to connect. Both are loud. **Do not add
 a `/data` volume** — it would turn a loud failure into a quiet one.
+
+## The health endpoint became database-dependent
+
+`/healthz` used to return a static `{"status": "ok"}`. It now executes
+`SELECT 1` and returns 500 when the database is unreachable, and upstream's
+README states the intent: *"so k8s restarts the app pod if its Postgres dies."*
+
+That is right for readiness and wrong for liveness. Restarting the application
+does not repair its database, and on this cluster k3s-server blackholes several
+times a day — taking the API server and every Postgres pod with it. A
+DB-dependent liveness probe converts each of those outages into an app restart
+storm that cannot help.
+
+So readiness uses `/healthz` (stop serving while the database is gone) and
+liveness uses `GET /`, which returns a static `index.html` with no database
+access. Liveness answers "is the process wedged", which is the only question it
+should ask.
+
+Schema creation also gained a retry — `_ensure_schema()` tries for 15 × 2s and
+then **raises**. Thirty seconds is short for a cold CNPG start on NFS, so the
+sync-wave ordering is still doing real work: without it, the first deploy would
+crashloop its way to readiness instead of waiting.
 
 ## Tailnet only, and not for the usual reason
 

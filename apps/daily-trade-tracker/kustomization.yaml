@@ -10,10 +10,17 @@ resources:
   # No lan-ingress.yaml. The app has no authentication -- see ingress.yaml.
 
 images:
-  # Pinned to the sha tag, never `latest`, and this app is the clearest
-  # illustration of why that rule exists: the PREVIOUS build (sha-e99dfbe) was
-  # amd64-only, so `latest` pointed at an image that could not run on this
-  # cluster at all. sha-844b9f4 is multi-arch and today happens to share
-  # `latest`'s digest (sha256:314bf198...) -- verified, not assumed.
-  - name: ghcr.io/thetaskmaster42/daily-trade-tracker
-    newTag: "sha-844b9f4"
+  # NOTE the package was RENAMED upstream: daily-trade-tracker ->
+  # tool-packages-daily-trade-tracker. The old name still exists in GHCR with
+  # stale tags, so a typo here pulls a real but abandoned image rather than
+  # failing loudly.
+  #
+  # Pinned to the sha tag, never `latest`. CI now builds
+  # platforms: linux/amd64,linux/arm64 and tests on both plus a real Postgres 16,
+  # so the arch gate that blocked the first review is genuinely closed --
+  # re-verified here rather than taken from the workflow file.
+  #
+  # sha-1b91a17 is HEAD of main and shares `latest`'s digest
+  # (sha256:ed575233...), checked, not assumed.
+  - name: ghcr.io/thetaskmaster42/tool-packages-daily-trade-tracker
+    newTag: "sha-1b91a17"

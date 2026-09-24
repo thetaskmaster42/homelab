@@ -55,7 +55,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: trade-tracker
-          image: ghcr.io/thetaskmaster42/daily-trade-tracker:sha-844b9f4
+          image: ghcr.io/thetaskmaster42/tool-packages-daily-trade-tracker:sha-1b91a17
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -109,19 +109,34 @@ spec:
             # ---------------------------------------------------------------
             - name: TZ
               value: "America/Los_Angeles"
-          # /healthz is a static {"status":"ok"} -- it does NOT touch the
-          # database, so these probes cannot detect a dead DB. That is covered
-          # instead by create_all() running at import: a pod that cannot reach
-          # Postgres crashes on startup rather than serving a broken app. Do not
-          # "fix" the probe expecting it to catch DB loss; it never will.
+          # READINESS on /healthz, LIVENESS on /.
+          #
+          # /healthz now executes `SELECT 1` and returns 500 when the database is
+          # unreachable. That is exactly right for readiness -- pull the pod out
+          # of the Service while it cannot serve -- and a footgun for liveness.
+          #
+          # Upstream's README says the point is that "k8s restarts the app pod if
+          # its Postgres dies". Restarting the app does not fix Postgres, and on
+          # this cluster k3s-server blackholes several times a day, taking the
+          # API server and every database pod with it. A DB-dependent liveness
+          # probe would turn each of those into an app restart storm on top of
+          # the outage it cannot do anything about.
+          #
+          # So liveness uses `GET /`, which serves a static index.html with no
+          # database access -- it answers "is the process wedged", which is the
+          # only question liveness should ask.
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
+            # 12 x 10s = 2 minutes. _ensure_schema() retries the database for
+            # 15 x 2s = 30s and then RAISES, so a slow Postgres start shows up as
+            # a crash and a restart rather than a long wait. The sync-wave
+            # ordering below is what keeps that from happening on a cold deploy.
             failureThreshold: 12
           livenessProbe:
-            httpGet: { path: /healthz, port: http }
+            httpGet: { path: /, port: http }
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 3
