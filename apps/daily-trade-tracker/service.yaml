@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trade-tracker
+  labels:
+    app: trade-tracker
+spec:
+  type: ClusterIP
+  selector:
+    app: trade-tracker
+  ports:
+    # Port 80 on the Service, 8080 in the container -- matching every other app
+    # here so the Ingresses all reference `number: 80` and nothing has to
+    # remember a per-app port.
+    - name: http
+      port: 80
+      targetPort: http

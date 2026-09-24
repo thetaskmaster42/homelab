@@ -1,0 +1,35 @@
+# Tailnet exposure, and tailnet ONLY.
+#
+# THIS APP HAS NO AUTHENTICATION OF ANY KIND. Its routers expose unauthenticated
+# POST /trades, PUT /trades/{id} and DELETE /trades/{id} -- there is no login, no
+# session, no API key, nothing. Anyone who can reach it can read, alter and
+# delete the entire trading journal.
+#
+# That is why there is no companion lan-ingress.yaml, unlike most apps here. A
+# LAN Ingress would hand full write access to every device on the subnet, which
+# is the same reasoning that keeps headlamp off the LAN plane. Adding
+# authentication upstream is the prerequisite for a LAN name, not a Traefik
+# annotation.
+#
+# Never funneled, for the obvious reason.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trade-tracker
+  annotations:
+    # Wave 2, after the workload. An Ingress left in the default wave 0 sits
+    # alongside the CloudNativePG Cluster, and ArgoCD will not start wave 1 until
+    # every wave-0 resource is Healthy -- a tailscale Ingress is only Healthy
+    # once the operator assigns it an address, so an operator outage would stop
+    # the app being deployed at all rather than merely being unreachable.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: trade-tracker
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - trade-tracker
