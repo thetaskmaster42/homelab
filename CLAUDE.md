@@ -22,13 +22,16 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 - **This GitHub repo is public.** Never commit a plaintext credential. Secrets
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
-- **NOTHING IS BACKED UP.** `spec.backup` is unset on every CloudNativePG
-  cluster: no WAL archiving, no point-in-time recovery. Since
-  [ADR 0020](docs/decisions/0020-one-postgres-per-app.md) dropped each database
-  to one instance there is not even a replica. `opengym`'s `/srv/opengym/data`
-  holds WebAuthn passkeys that cannot be re-issued, on one SD card. **Barman → S3
-  (MinIO) is the highest-priority work in this repo** — treat any proposal that
-  adds data before it lands as making the problem worse.
+- **Backups exist but are UNPROVEN.** Every CloudNativePG cluster archives WAL
+  and takes a daily base backup through the Barman Cloud plugin
+  (`infra/services/barman-cloud/`) to Garage S3 on TrueNAS
+  (`192.168.11.4:30188`, bucket `cnpg-backups`, one prefix per app) — see each
+  app's `backup.yaml`. **No restore has been performed yet**, so treat them as
+  unverified until one has; the first is the TrueNAS migration's Postgres step
+  ([ADR 0021](docs/decisions/0021-truenas-replaces-portal.md)). There is no
+  replica either ([ADR 0020](docs/decisions/0020-one-postgres-per-app.md)).
+  `opengym`'s `/srv/opengym/data` holds WebAuthn passkeys that cannot be
+  re-issued, on one SD card, and nothing backs it up.
 - **Two StorageClasses, and TWO defaults.** `nfs` (on `portal`, 192.168.11.3)
   holds application data; k3s's `local-path` holds the monitoring stack, which
   must survive a NAS outage. k3s marks `local-path` default and cannot be stopped

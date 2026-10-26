@@ -171,13 +171,33 @@ kubectl -n <ns> delete secret <cluster>-app
 Adding a replica is a one-line change to `spec.instances`. Do it per application,
 with a comment saying why that application needs it — not by copy-paste.
 
-## Not yet done
+## Backups
 
-**No backups, on any cluster.** `spec.backup` is unset everywhere, so there is no
-WAL archiving and no point-in-time recovery. Replication was never a substitute:
-copies of a table someone dropped are still copies of a dropped table, and now
-there is only one copy.
+Each application's `backup.yaml` holds an `ObjectStore` and a `ScheduledBackup`,
+and its `Cluster` names the Barman Cloud plugin as its WAL archiver:
 
-CloudNativePG archives to S3-compatible storage. MinIO on the NAS is the obvious
-target. **This is the highest-priority gap in the repo** — and reducing replicas
-(ADR 0020) deliberately made it more urgent rather than less.
+| Piece | Where |
+|---|---|
+| plugin (operator side) | `infra/services/barman-cloud/`, namespace `cnpg-system` |
+| target | Garage on TrueNAS, `http://192.168.11.4:30188`, bucket `cnpg-backups` |
+| layout | `s3://cnpg-backups/<app>/` — one prefix per cluster, never shared |
+| WAL | continuous, gzip |
+| base backups | daily, staggered 03:00 / 03:20 / 03:40, `immediate: true` on creation |
+| retention | 30 days |
+| credential | bootstrap secret `garage-cnpg-backups`, one copy per namespace |
+
+Check status with:
+
+```sh
+kubectl get backups.postgresql.cnpg.io -A
+kubectl -n <ns> get cluster <name> -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")]}'
+```
+
+**Not yet proven.** No restore has been performed. Until one has, these are
+backups in name only. The first real restore is planned as the Postgres step of
+the TrueNAS migration ([ADR 0021](decisions/0021-truenas-replaces-portal.md)):
+a new `Cluster` recovered from this archive, which must write to a **new** prefix
+— barman refuses to archive into a path that already holds another server's WAL.
+
+Backups and, after that migration, live data share one TrueNAS host. ZFS
+snapshots cover deletion and bad migrations; they do not cover losing the box.

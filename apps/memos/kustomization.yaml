@@ -4,6 +4,7 @@ namespace: memos
 
 resources:
   - postgres-cluster.yaml
+  - backup.yaml
   - data-pvc.yaml
   - deployment.yaml
   - service.yaml

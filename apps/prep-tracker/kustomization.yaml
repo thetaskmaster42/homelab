@@ -22,6 +22,7 @@ resources:
   # `alembic upgrade head`. RUN_MIGRATIONS_ON_STARTUP is false in the Deployment
   # precisely so the two replicas cannot race each other on migration.
   - https://raw.githubusercontent.com/thetaskmaster42/prep-tracker/45e502bcb2c675646cda02841833c658e1aff523/k8s/migrate-job.yaml
+  - backup.yaml
   - ingress.yaml
   # A second Ingress for LAN access. Deliberately a separate file rather than
   # more rules on the first: the two have different classes, different
@@ -137,6 +138,16 @@ patches:
       - op: replace
         path: /spec/instances
         value: 1
+      # WAL archiving via the Barman Cloud plugin; backup.yaml holds the
+      # ObjectStore and the daily base backup. A patch rather than an upstream
+      # edit because this Cluster comes from prep-tracker pinned to a sha.
+      - op: add
+        path: /spec/plugins
+        value:
+          - name: barman-cloud.cloudnative-pg.io
+            isWALArchiver: true
+            parameters:
+              barmanObjectName: prep-tracker-backups
 
   - target:
       kind: Ingress

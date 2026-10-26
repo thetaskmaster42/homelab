@@ -1,0 +1,6 @@
+# The chart sets no resources by default. The plugin itself is a small gRPC
+# server; the heavy lifting (compressing and uploading WAL) happens in the
+# sidecar it injects into each Postgres pod, not here.
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits: { memory: 256Mi }

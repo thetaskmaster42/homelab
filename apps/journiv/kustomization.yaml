@@ -4,6 +4,7 @@ namespace: journiv
 
 resources:
   - postgres-cluster.yaml
+  - backup.yaml
   - data-pvc.yaml
   - valkey.yaml
   - deployment.yaml

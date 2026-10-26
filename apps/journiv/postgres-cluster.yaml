@@ -49,3 +49,12 @@ spec:
     initdb:
       database: journiv
       owner: journiv
+
+  # Continuous WAL archiving through the Barman Cloud plugin (backup.yaml has
+  # the ObjectStore and the daily base backup). Adding this restarts the pod
+  # once to inject the plugin's sidecar -- with one instance, a short outage.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: journiv-backups
