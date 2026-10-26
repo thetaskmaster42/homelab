@@ -22,6 +22,13 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 - **This GitHub repo is public.** Never commit a plaintext credential. Secrets
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
+- **NOTHING IS BACKED UP.** `spec.backup` is unset on every CloudNativePG
+  cluster: no WAL archiving, no point-in-time recovery. Since
+  [ADR 0020](docs/decisions/0020-one-postgres-per-app.md) dropped each database
+  to one instance there is not even a replica. `opengym`'s `/srv/opengym/data`
+  holds WebAuthn passkeys that cannot be re-issued, on one SD card. **Barman → S3
+  (MinIO) is the highest-priority work in this repo** — treat any proposal that
+  adds data before it lands as making the problem worse.
 - **Two StorageClasses, and TWO defaults.** `nfs` (on `portal`, 192.168.11.3)
   holds application data; k3s's `local-path` holds the monitoring stack, which
   must survive a NAS outage. k3s marks `local-path` default and cannot be stopped
@@ -67,7 +74,7 @@ Infra Applications are **multi-source**: the chart comes from its upstream repo
 while `values.yaml` comes from this repo via the `$values` ref. This is what lets
 "Helm charts are mandatory" and "config lives in git" both be true.
 
-### Two things that will bite you
+### Three things that will bite you
 
 1. **Sync waves do not order Applications.** Waves order resources *within* one
    Application's sync. ApplicationSet-generated Applications have no parent sync
@@ -78,6 +85,20 @@ while `values.yaml` comes from this repo via the `$values` ref. This is what let
    Without it in the ApplicationSet template, deleting a service directory
    removes the Application but *orphans* its workloads — a running service with
    no git representation. Never remove it.
+3. **`retry: {limit: -1}` lets a bad revision pin an Application forever.** A
+   retrying sync operation keeps re-applying **the revision it started with**, so
+   if that revision can never become Healthy, no later fix on `main` is ever
+   applied — the Application sits `OutOfSync` at a stale commit while the fix
+   waits in git. This happened twice in one session (journiv, then memos), and
+   both times the symptom was "I merged the fix and nothing changed".
+
+   Diagnose with `kubectl -n argocd get application <name> -o
+   custom-columns=PHASE:.status.operationState.phase,REV:.status.operationState.syncResult.revision`
+   — a `Running` phase at an old revision is the deadlock. The fix is to
+   **Terminate** the operation (ArgoCD UI, or patch
+   `.status.operationState.phase` to `Terminating`) and then trigger **one
+   explicit Sync**: auto-sync will not retry a revision whose operation just
+   failed. Patching `.operation` while one is still Running is silently ignored.
 
 ### What cannot be GitOps-managed
 
@@ -148,6 +169,35 @@ be looked at before it is deployed.
   wave, and ArgoCD will not start later waves — so the app silently stops
   receiving *any* change while still reporting Healthy.
 
+## Databases
+
+**One CloudNativePG `Cluster` per application, `instances: 1`, declared beside
+that application's manifests.** There is no shared database — one existed, ran
+for weeks with zero consumers, and was deleted
+([ADR 0020](docs/decisions/0020-one-postgres-per-app.md)). `infra/services/cloudnative-pg/`
+installs the **operator only** (`extraManifests: "false"`).
+
+Two things to know before touching a `Cluster`:
+
+- **Do not add replicas by copy-paste.** Three instances was theatre here: every
+  volume is on the same NAS, so `portal` going away takes the whole cluster
+  anyway, and a k3s-server blackhole restarts all of them together regardless.
+  Replicas cover node loss; they do nothing about a bad migration or a wrong
+  `DELETE`, which is what actually needs backups. If an app genuinely needs
+  failover, say so in its own `Cluster` with a reason.
+- **CloudNativePG's ready-made `uri` key is not always usable.** Its scheme is
+  `postgresql://`, which SQLAlchemy 2.0 resolves to **psycopg2** — so an app
+  shipping only `psycopg[binary]` (psycopg 3) dies at import with
+  `ModuleNotFoundError: No module named 'psycopg2'`, which reads as a broken
+  image rather than a wrong URL. Compose the URL from the component keys with an
+  explicit dialect instead (`postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@...`),
+  relying on Kubernetes expanding `$(VAR)` from *earlier* env entries. Safe only
+  because the operator generates a 64-character URL-safe password — verified
+  across every cluster here.
+
+Details, including the three Services and the `fsync` caveat, in
+[docs/postgres.md](docs/postgres.md).
+
 ## Node health
 
 Every node runs `netsnap-sentinel` (see `scripts/README.md`), deployed by
@@ -166,9 +216,31 @@ without rebooting a node.
 The open investigation is a link-up-but-no-traffic blackhole: `Link detected:
 yes` at 1Gb/s, zero error counters, kernel silent, ARP to the gateway
 `INCOMPLETE`. Power and thermal are **excluded** (`throttled=0x0`, 43.9 °C), as
-are Calico and EEE. Note that a link bounce resets the Pi's MAC/PHY, the ARP
-cache *and* the switch's port state simultaneously — so "a bounce fixed it"
-attributes nothing, which is why recovery is staged.
+are Calico and EEE.
+
+**Scale, as of 2026-09-24: 71+ events, ~6 per day, sustained — all on
+k3s-server, zero on either worker.** Three identical Pis, same kernel and `macb`
+driver; only one blackholes. That asymmetry argues against a generic driver bug
+and toward something node-specific. **Swapping k3s-server's cable and switch port
+is the cheap experiment and has still not been done.**
+
+**These blackholes are what restarts pods cluster-wide, so do not debug those as
+app problems.** The API server lives on this node, so while it is isolated every
+pod on every node loses `10.43.0.1`. CloudNativePG's instance manager exits
+rather than waits — `wait-for-get-cluster` → `dial tcp 10.43.0.1:443: connect: no
+route to host` → exit 1 — so every Postgres in the cluster restarts together,
+with timestamps landing inside the sentinel's failure window.
+
+**One rung of the recovery ladder is fake.** `ethtool -r` returns
+`Cannot restart autonegotiation: Operation not supported` on this NIC and the
+script's `2>/dev/null || true` swallows it, so **stage 2 has never run in any of
+the 71 events** and its attribution message ("PHY/link negotiation…") is
+misleading. What the data does prove: stage 1 `ip neigh flush` ran 71 times and
+never once helped, so stale kernel neighbour state is **excluded**. Stage 3
+`ip link down/up` resolved 71 of 71 — but it resets the MAC/driver *and* drops
+carrier so the switch re-learns, so it still attributes nothing on its own.
+`macb` driver state vs switch port state remains unseparated, and fixing that
+needs a stage that resets one without the other.
 
 ## Commands
 
