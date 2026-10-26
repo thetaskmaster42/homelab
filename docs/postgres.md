@@ -15,11 +15,9 @@ turned out to be theatre.
 declares its own `Cluster` beside its own manifests:
 
 ```
-apps/journiv/postgres-cluster.yaml         journiv-db   → ns journiv
 apps/memos/postgres-cluster.yaml           memos-db     → ns memos
 apps/daily-trade-tracker/postgres-cluster.yaml
                                            trade-tracker-db → ns daily-trade-tracker
-apps/prep-tracker/kustomization.yaml       prep-tracker-db (remote base, patched)
 ```
 
 **Nothing creates database pods directly.** A `Cluster` is declared; the operator
@@ -182,7 +180,7 @@ and its `Cluster` names the Barman Cloud plugin as its WAL archiver:
 | target | Garage on TrueNAS, `http://192.168.11.4:30188`, bucket `cnpg-backups` |
 | layout | `s3://cnpg-backups/<app>/` — one prefix per cluster, never shared |
 | WAL | continuous, gzip |
-| base backups | daily, staggered 03:00 / 03:20 / 03:40, `immediate: true` on creation |
+| base backups | daily at 03:00, `immediate: true` on creation — stagger any new app's schedule away from it |
 | retention | 30 days |
 | credential | bootstrap secret `garage-cnpg-backups`, one copy per namespace |
 

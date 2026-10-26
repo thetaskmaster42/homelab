@@ -6,7 +6,8 @@ does the rest. Applying by hand produces a resource ArgoCD immediately reverts,
 and leaves git describing something that is not running.
 
 Worked example: `prep-tracker` `40754fd` → `80a06c8`, the release that moved it
-from SQLite to PostgreSQL.
+from SQLite to PostgreSQL. prep-tracker was removed from the cluster on
+2026-10-26; the steps still apply to any sha-pinned app, with the names changed.
 
 ---
 

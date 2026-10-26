@@ -45,9 +45,9 @@ kind: ScheduledBackup
 metadata:
   name: memos-db-daily
 spec:
-  # Six fields -- CloudNativePG's cron has SECONDS first. 03:00, staggered from
-  # journiv (03:20) and prep-tracker (03:40) so three base backups never hit
-  # the NAS at once.
+  # Six fields -- CloudNativePG's cron has SECONDS first: 03:00 daily. Give any
+  # other app that backs up a different minute, so base backups never hit the
+  # NAS at the same time.
   schedule: "0 0 3 * * *"
   # Take one now rather than waiting for 03:00: until the first base backup
   # exists, archived WAL has nothing to replay onto.

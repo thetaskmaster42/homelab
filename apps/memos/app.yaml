@@ -5,10 +5,8 @@
 # there is no homebuilt source and no k8s/ base to pull. Every manifest here is
 # written locally.
 #
-# Deployed alongside journiv on purpose. The two overlap — both capture dated
-# personal writing — and the plan is to run both, then keep one. Whichever loses
-# is `git rm -r apps/<name>`, and the ApplicationSet finalizer takes the
-# workloads with it.
+# Deployed alongside journiv on purpose, to run both and keep one. Memos is the
+# one that stayed: journiv was removed on 2026-10-26 (ADR 0017's status line).
 name: memos
 namespace: memos
 sourceRepo: https://github.com/usememos/memos
