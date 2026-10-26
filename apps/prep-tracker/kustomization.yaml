@@ -125,6 +125,18 @@ patches:
       - op: add
         path: /spec/storage/storageClass
         value: nfs
+      # `replace`, not `add`: the app repo's Cluster already declares
+      # instances: 3, so `add` would be a no-op on an existing path in some
+      # patch engines and is the wrong verb regardless.
+      #
+      # One instance, for the reasons set out in
+      # docs/decisions/0020-one-postgres-per-app.md -- in short, every replica
+      # here writes to the same NAS, so replication protected against the one
+      # failure mode this cluster does not have, while nothing protected against
+      # the ones it does.
+      - op: replace
+        path: /spec/instances
+        value: 1
 
   - target:
       kind: Ingress

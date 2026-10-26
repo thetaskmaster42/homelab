@@ -15,7 +15,23 @@ metadata:
   labels:
     app: memos
 spec:
-  instances: 3
+  # ONE instance, deliberately. Three was HA theatre here: every replica's
+  # volume lives on the same NAS, so `portal` going away takes the whole cluster
+  # regardless, and a k3s-server blackhole removes the API server and restarts
+  # all of them together anyway -- which is what ~1,900 accumulated postgres
+  # restarts actually recorded.
+  #
+  # What replicas buy is seconds-of-failover on node loss. What they do NOT buy
+  # is protection from a bad migration, a wrong DELETE, or a corrupt page -- all
+  # of which replicate instantly to every copy. Those need backups, which is
+  # where the freed capacity is going (barman -> S3).
+  #
+  # Availability is not zero at one instance: the PVC is RWO but the volume is
+  # NFS, so the pod reschedules onto another node and reattaches. That is minutes
+  # of downtime on node loss instead of seconds, and no data loss.
+  #
+  # See docs/decisions/0020-one-postgres-per-app.md.
+  instances: 1
   primaryUpdateStrategy: unsupervised
 
   storage:
