@@ -9,6 +9,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - postgres-cluster-truenas.yaml
   # A second Ingress for LAN access. Deliberately a separate file rather than
   # more rules on the first: the two have different classes, different
   # certificate authorities and different audiences, and merging them would hide
