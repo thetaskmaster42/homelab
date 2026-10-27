@@ -202,9 +202,14 @@ Two rules that restore taught:
 - **A restored cluster archives to a NEW prefix** (`serverName` on the plugin).
   Barman refuses to archive into a path that already holds WAL, so recovering
   from `memos/memos-db` and writing to `memos/memos-pg` is not optional.
-- **Take a base backup of the new cluster straight away.** Repointing an
-  existing `ScheduledBackup` does not fire its `immediate` backup, and until a
-  base backup exists the new prefix holds WAL with nothing to replay onto.
+- **A `ScheduledBackup` cannot be repointed.** `spec.cluster` is immutable, and
+  the admission webhook rejects the patch. It syncs in wave 0, so the rejection
+  stops ArgoCD before wave 1, the Deployment. During the memos cutover, ArgoCD
+  had already pruned `memos-db` while the app still read `memos-db-app`. memos was
+  down until the live `ScheduledBackup` was deleted and ArgoCD recreated it.
+  When a cutover changes which cluster is backed up, give the `ScheduledBackup`
+  a **new name**. ArgoCD then prunes the old one and creates the new one, which
+  also fires `immediate` and takes the new cluster's first base backup.
 
 Nothing prunes a prefix whose cluster is gone — retention runs per live
 cluster. `s3://cnpg-backups/memos/memos-db/` is frozen history; delete it by hand
