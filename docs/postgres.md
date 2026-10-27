@@ -15,7 +15,7 @@ turned out to be theatre.
 declares its own `Cluster` beside its own manifests:
 
 ```
-apps/memos/postgres-cluster.yaml           memos-db     → ns memos
+apps/memos/postgres-cluster.yaml           memos-pg     → ns memos
 apps/daily-trade-tracker/postgres-cluster.yaml
                                            trade-tracker-db → ns daily-trade-tracker
 ```
@@ -55,7 +55,7 @@ From `spec.instances: 1`:
 |---|---|
 | `<cluster>-1` | the primary — and the only instance |
 | `<cluster>-rw`, `-ro`, `-r` | three Services (below) |
-| `<cluster>-1` PVC | on `nfs`, always named explicitly |
+| `<cluster>-1` PVC | on `nfs` or `truenas`, always named explicitly |
 | `<cluster>-app` | application credentials, `kubernetes.io/basic-auth` |
 | `<cluster>-ca`, `-server`, `-replication` | TLS for client and replication traffic |
 
@@ -91,10 +91,9 @@ The `fsync` caveat still stands and is now unmitigated: Postgres treats a
 completed `fsync` as durable, an NFS server that acknowledges early breaks that
 across a power cut, and Postgres cannot detect it — the damage surfaces later as
 a corrupt page. `hard` mounts cover a NAS *outage* cleanly (block, then resume);
-they do nothing for a power cut on `portal` mid-write.
+they do nothing for a power cut on the NAS mid-write.
 
-**So backups are the only real protection, and they still do not exist.** See the
-last section.
+**So backups are the only real protection.** See the last section.
 
 ## The three Services
 
@@ -191,11 +190,25 @@ kubectl get backups.postgresql.cnpg.io -A
 kubectl -n <ns> get cluster <name> -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")]}'
 ```
 
-**Not yet proven.** No restore has been performed. Until one has, these are
-backups in name only. The first real restore is planned as the Postgres step of
-the TrueNAS migration ([ADR 0021](decisions/0021-truenas-replaces-portal.md)):
-a new `Cluster` recovered from this archive, which must write to a **new** prefix
-— barman refuses to archive into a path that already holds another server's WAL.
+**Proven once, by a real restore.** On 2026-10-27 memos moved to TrueNAS as a
+new `Cluster`, `memos-pg`, bootstrapped by `recovery` from `memos-db`'s archive
+([ADR 0021](decisions/0021-truenas-replaces-portal.md) phase 3). Every table's row
+count matched, and contents matched except one rotated login token. The
+manifest is `apps/memos/postgres-cluster.yaml`; it recovered in under two
+minutes.
+
+Two rules that restore taught:
+
+- **A restored cluster archives to a NEW prefix** (`serverName` on the plugin).
+  Barman refuses to archive into a path that already holds WAL, so recovering
+  from `memos/memos-db` and writing to `memos/memos-pg` is not optional.
+- **Take a base backup of the new cluster straight away.** Repointing an
+  existing `ScheduledBackup` does not fire its `immediate` backup, and until a
+  base backup exists the new prefix holds WAL with nothing to replay onto.
+
+Nothing prunes a prefix whose cluster is gone — retention runs per live
+cluster. `s3://cnpg-backups/memos/memos-db/` is frozen history; delete it by hand
+once it is no longer wanted.
 
 Backups and, after that migration, live data share one TrueNAS host. ZFS
 snapshots cover deletion and bad migrations; they do not cover losing the box.

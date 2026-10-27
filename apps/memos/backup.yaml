@@ -1,4 +1,4 @@
-# Backups for memos-db: continuous WAL archiving plus a daily base backup, to
+# Backups for memos-pg: continuous WAL archiving plus a daily base backup, to
 # Garage on TrueNAS. Together they allow point-in-time recovery to any moment
 # inside the retention window -- which is what a bad migration or a wrong
 # DELETE actually needs, and what the replicas removed by ADR 0020 never gave.
@@ -54,7 +54,7 @@ spec:
   immediate: true
   backupOwnerReference: self
   cluster:
-    name: memos-db
+    name: memos-pg
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
