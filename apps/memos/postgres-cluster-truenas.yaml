@@ -1,0 +1,44 @@
+# memos-db rebuilt on TrueNAS by recovering it from its barman backup (ADR 0021
+# phase 3). Doubles as the first restore test of the Garage backups.
+# Storage class cannot be changed in place, hence a second Cluster.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: memos-pg
+  labels:
+    app: memos
+spec:
+  instances: 1
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    size: 5Gi
+    storageClass: truenas
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+  # Only read when the cluster is first created; inert afterwards.
+  bootstrap:
+    recovery:
+      source: memos-db-backup
+      database: memos
+      owner: memos
+
+  externalClusters:
+    - name: memos-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: memos-backups
+          serverName: memos-db        # read the OLD cluster's backups
+
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: memos-backups
+        # Archive under a NEW folder. Barman refuses to archive into a folder
+        # that already holds another cluster's history (memos/memos-db).
+        serverName: memos-pg
