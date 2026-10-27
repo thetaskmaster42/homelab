@@ -1,0 +1,30 @@
+# The Barman Cloud plugin for CloudNativePG: base backups and continuous WAL
+# archiving to S3. This is what ends "NOTHING IS BACKED UP" in CLAUDE.md.
+#
+# The plugin, not the Cluster's in-tree `spec.backup.barmanObjectStore`, because
+# that field is deprecated since CloudNativePG 1.26 in favour of exactly this.
+# The operator here is 1.30.
+#
+# Namespace MUST be cnpg-system: the operator discovers plugins by their Service
+# in its own namespace. Installed anywhere else, every Cluster that names the
+# plugin fails with "plugin not found" while the plugin itself looks Healthy.
+#
+# Needs cert-manager (the chart issues the mTLS certificates the operator and
+# plugin use to talk to each other) -- already running here. The CR Application
+# ordering problem does not arise: the chart ships its CRDs, and the
+# ObjectStore CRs that consume them live in apps/*, which retry until they exist.
+#
+# The S3 target is Garage on TrueNAS (192.168.11.4:30188), bucket cnpg-backups.
+# Its credential is a bootstrap secret, one copy per app namespace, because an
+# ObjectStore can only reference a Secret in its own namespace.
+name: barman-cloud
+namespace: cnpg-system
+extraManifests: "false"
+chart:
+  repo: https://cloudnative-pg.github.io/charts
+  name: plugin-barman-cloud
+  # App version v0.15.1. Both images it pulls (the plugin and the sidecar it
+  # injects into every Postgres pod) were checked for linux/arm64 by hand: the
+  # sidecar image appears only as a ConfigMap value, so the rendered-manifest
+  # arm64 test cannot see it.
+  version: "0.8.1"

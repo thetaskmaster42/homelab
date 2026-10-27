@@ -36,8 +36,9 @@ exposure: tailnet        # tailnet | funnel | internal
 ```
 
 `apps/<name>/kustomization.yaml` pulls the app repo's manifests **pinned to a
-commit sha**, pins the image tag, and layers on patches. See
-`apps/prep-tracker/` as the worked example.
+commit sha**, pins the image tag, and layers on patches. The worked example
+was `apps/prep-tracker/`, removed 2026-10-26 — read it at revision `a3fa4af`
+(`git show a3fa4af:apps/prep-tracker/kustomization.yaml`).
 
 Pinning to a sha rather than a branch is what makes the promotion explicit: a
 push to the app repo cannot silently change what is deployed. Bumping the ref
@@ -51,7 +52,7 @@ reachable from your devices anywhere and from nobody else's.
 
 Adding `tailscale.com/funnel: "true"` makes it **genuinely public on the
 internet**. Before setting it, be explicit about what authentication the app has
-— `prep-tracker` deliberately stays on the tailnet because it has none.
+— `prep-tracker` deliberately stayed on the tailnet because it had none.
 
 ## Verify
 

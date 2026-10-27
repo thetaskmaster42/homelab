@@ -1,6 +1,8 @@
 # 0017 — Journiv, and what a third-party app costs when it ships a compose file
 
-**Status:** accepted, 2026-09-03
+**Status:** accepted, 2026-09-03 — **retired 2026-10-26.** Removed from the cluster;
+Memos ([ADR 0018](0018-memos.md)) is the journal that stayed. The last revision
+with `apps/journiv/` is `a3fa4af`. A final `pg_dump` was taken before removal.
 
 ## Context
 
