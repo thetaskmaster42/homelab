@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted — phase 1 (provisioner added, no consumers).
+Accepted — phases 1–3 done for memos (2026-10-27): `truenas` StorageClass live,
+barman archiving to Garage, and `memos-pg` recovered from that archive onto
+`truenas`, then cut over; the `nfs`-backed `memos-db` is deleted. Next: phase 4,
+plain data volumes (`memos-data` is still on `nfs`).
 
 ## Context
 

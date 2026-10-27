@@ -6,7 +6,7 @@ metadata:
   labels:
     app: memos
   annotations:
-    # Wave 1. The pod cannot start before `memos-db-app` exists, and the
+    # Wave 1. The pod cannot start before `memos-pg-app` exists, and the
     # CloudNativePG operator publishes that Secret only once the Cluster
     # (wave 0) is up. A pod scheduled ahead of it sits in
     # CreateContainerConfigError rather than retrying cleanly.
@@ -92,7 +92,8 @@ spec:
                   # sslmode=require when the DSN does not say -- CNPG serves TLS
                   # with its own CA, and `require` does not verify the chain, so
                   # this connects without any sslmode override.
-                  name: memos-db-app
+                  # changed memos-db-app to memos-pg-app to migrate memos from portal to truenas pg
+                  name: memos-pg-app
                   key: uri
             # MEMOS_INSTANCE_URL is deliberately UNSET. Left empty, Memos trusts
             # the host of the incoming request for credentialed CORS
