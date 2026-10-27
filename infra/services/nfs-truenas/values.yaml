@@ -1,0 +1,39 @@
+nfs:
+  # TrueNAS SCALE. Addressed by IP, like `portal`, and therefore needs a static
+  # address or a DHCP reservation: a lease change would hang every pod on this
+  # class (see `hard` below), not just fail new mounts.
+  server: 192.168.11.4
+  # The FULL dataset path. Unlike OpenMediaVault, SCALE has no `/export` fsid=0
+  # pseudo-root, so the NFSv4 path is the server-side path -- the opposite of
+  # the trap documented in nfs-provisioner/values.yaml. Verified by a kubelet
+  # mount from k3s-worker-1 with exactly these options.
+  path: /mnt/tank/k8s-nfs
+  mountOptions:
+    - nfsvers=4.1
+    # `hard`, `timeo` and `retrans` match nfs-provisioner exactly; the reasoning
+    # (block rather than hand Postgres an EIO it reads as corruption) is there.
+    - hard
+    - timeo=600
+    - retrans=2
+
+storageClass:
+  name: truenas
+  # NOT default while `portal` is still serving. Two defaults already exist
+  # (nfs + k3s's local-path) and every PVC names its class anyway; flipping this
+  # is the last migration step, together with removing nfs-provisioner.
+  defaultClass: false
+  # Retain + archive for the same reason as `nfs`: this storage exists so data
+  # outlives the cluster, and a rebuild must not be able to erase it.
+  reclaimPolicy: Retain
+  archiveOnDelete: true
+  accessModes: ReadWriteMany
+  allowVolumeExpansion: true
+
+# The share is exported with Maproot=root and NO Mapall. That distinction is
+# load-bearing: with Mapall=root every file is created as uid 0, and Postgres
+# then refuses to start ("data directory has wrong ownership"). Tested before
+# this landed: files written as uid 26 come back owned by 26:26.
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 128Mi }

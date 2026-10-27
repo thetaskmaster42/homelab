@@ -1,0 +1,21 @@
+# Dynamic PersistentVolumes backed by TrueNAS SCALE (192.168.11.4) -- the
+# successor to `portal`. See docs/decisions/0021-truenas-replaces-portal.md.
+#
+# A SECOND provisioner rather than repointing nfs-provisioner, because a
+# provisioned PV's `spec.nfs.server` is immutable: repointing the existing
+# Application would strand every volume it has already created on `portal`,
+# not move it. Running both lets each app move across on its own PR, with the
+# old volume still intact behind it, and `portal` is retired only once nothing
+# binds to the `nfs` class.
+#
+# Same chart and version as nfs-provisioner on purpose -- the two must behave
+# identically so that moving an app changes where its bytes live and nothing
+# else. The release name differs, which is what keeps them apart: the chart
+# derives both the provisioner name and its helper PV from it.
+name: nfs-truenas
+namespace: storage
+extraManifests: "false"
+chart:
+  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+  name: nfs-subdir-external-provisioner
+  version: "4.0.18"
