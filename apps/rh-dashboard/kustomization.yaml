@@ -6,6 +6,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - pvc.yaml
+  - data-pvc.yaml
   - ingress.yaml
   # A second Ingress for LAN access. Deliberately a separate file rather than
   # more rules on the first: the two have different classes, different

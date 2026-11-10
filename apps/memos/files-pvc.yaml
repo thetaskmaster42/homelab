@@ -1,0 +1,28 @@
+# /var/opt/memos on TrueNAS — the successor to memos-data (ADR 0021, phase 4).
+#
+# A new claim rather than an edit to memos-data: storageClassName is immutable,
+# so patching it fails the sync at wave 0, and ArgoCD then never reaches the
+# wave-1 Deployment. Same trap as the ScheduledBackup rename in #31.
+#
+# Unconsumed until the data is copied across and the Deployment is switched in
+# a follow-up change; until then memos-data on `nfs` is still the live volume.
+#
+# Not as empty as memos-data's comment suggests: with no STORAGE instance
+# setting, Memos 0.30 writes uploads to LOCAL storage, i.e. this directory
+# (/var/opt/memos/assets). The database stores each attachment's absolute path,
+# so the mount path must not change.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memos-files
+  labels:
+    app: memos
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # Explicit, always — local-path is also a default class. reclaimPolicy on
+  # truenas is Retain, so the directory outlives the cluster.
+  storageClassName: truenas
