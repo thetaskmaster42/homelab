@@ -4,8 +4,14 @@
 
 Accepted — phases 1–3 done for memos (2026-10-27): `truenas` StorageClass live,
 barman archiving to Garage, and `memos-pg` recovered from that archive onto
-`truenas`, then cut over; the `nfs`-backed `memos-db` is deleted. Next: phase 4,
-plain data volumes (`memos-data` is still on `nfs`).
+`truenas`, then cut over; the `nfs`-backed `memos-db` is deleted. Phase 4 done
+(2026-11-10): `memos-data` → `memos-files` and `rh-dashboard` →
+`rh-dashboard-data`, copied with `cp -a` and verified by per-file md5 and
+owner/mode. No workload consumes `nfs` any more. Next: phase 5.
+
+Phase 4 was forced by a portal outage: with Postgres already moved, the memos
+pod still hung in `ContainerCreating` on `memos-data`, because a provisioned
+PV's server is immutable — the claim kept pointing at portal.
 
 ## Context
 

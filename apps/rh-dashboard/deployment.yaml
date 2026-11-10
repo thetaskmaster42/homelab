@@ -113,6 +113,6 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: rh-dashboard
+            claimName: rh-dashboard-data
         - name: tmp
           emptyDir: {}
