@@ -6,6 +6,7 @@ resources:
   - postgres-cluster.yaml
   - backup.yaml
   - data-pvc.yaml
+  - files-pvc.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml

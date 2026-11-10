@@ -1,0 +1,19 @@
+# Statement archive on TrueNAS — the successor to the `rh-dashboard` claim on
+# portal (ADR 0021, phase 4).
+#
+# A new claim rather than an edit to the old one: storageClassName is immutable,
+# and a failed patch blocks the whole sync. Unconsumed until the data is copied
+# across and the Deployment is switched in a follow-up change.
+#
+# ReadWriteOnce for the same reason as before: the app is a single writer.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rh-dashboard-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: truenas
+  resources:
+    requests:
+      storage: 2Gi
