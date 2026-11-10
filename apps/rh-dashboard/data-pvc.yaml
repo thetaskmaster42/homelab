@@ -1,11 +1,15 @@
-# Statement archive on TrueNAS — the successor to the `rh-dashboard` claim on
-# portal (ADR 0021, phase 4).
+# Statement archive. On TrueNAS since ADR 0021 phase 4, copied from the
+# `rh-dashboard` claim on portal (that PV is Retain, so portal keeps the old
+# copy). A new claim rather than an edit: storageClassName is immutable, and a
+# failed patch blocks the whole sync.
 #
-# A new claim rather than an edit to the old one: storageClassName is immutable,
-# and a failed patch blocks the whole sync. Unconsumed until the data is copied
-# across and the Deployment is switched in a follow-up change.
+# The truenas class is reclaimPolicy: Retain, so the data survives a node loss
+# and a `homelab nuke`.
 #
-# ReadWriteOnce for the same reason as before: the app is a single writer.
+# ReadWriteOnce despite NFS supporting RWX: the app is a single writer by design.
+# Two pods would race on the input directory during an upload and on the output
+# file during a rebuild, which is also why the Deployment is one replica with a
+# Recreate strategy.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

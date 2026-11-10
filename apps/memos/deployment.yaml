@@ -128,7 +128,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: memos-data
+            claimName: memos-files
         - name: deployment-config
           configMap:
             name: memos-deployment-config
