@@ -6,6 +6,11 @@ Prometheus and OpenBao to local disk. `nfs` remains the default class for
 application data; it is no longer the *only* class, and `--disable=local-storage`
 has been reverted.
 
+**Update, 2026-11-11:** the NAS behind the default class changed —
+[ADR 0021](0021-truenas-replaces-portal.md) moved application data from `portal`
+(class `nfs`) to TrueNAS (class `truenas`) and removed `nfs-provisioner`. The
+reasoning below is unchanged; read `nfs` as "the default NFS class".
+
 Supersedes the storage split described in `0001`-era comments, where `nfs` was
 opt-in and `local-path` was the default.
 

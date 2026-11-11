@@ -55,14 +55,14 @@ From `spec.instances: 1`:
 |---|---|
 | `<cluster>-1` | the primary — and the only instance |
 | `<cluster>-rw`, `-ro`, `-r` | three Services (below) |
-| `<cluster>-1` PVC | on `nfs` or `truenas`, always named explicitly |
+| `<cluster>-1` PVC | on `truenas`, always named explicitly |
 | `<cluster>-app` | application credentials, `kubernetes.io/basic-auth` |
 | `<cluster>-ca`, `-server`, `-replication` | TLS for client and replication traffic |
 
 ## One instance, and what that costs
 
 Replicas protected against the failure this lab does not have. Every volume is on
-the same NAS, so `portal` going away took primary and replica together; and a
+the same NAS, so the NAS going away took primary and replica together; and a
 k3s-server blackhole removes the API server, at which point CNPG's instance
 manager exits on every node at once. ~1,900 accumulated postgres restarts were
 correlated failure being counted three times per cluster, not resilience.

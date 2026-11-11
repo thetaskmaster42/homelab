@@ -93,17 +93,19 @@ Full sequence and its ordering constraints: [docs/bootstrap.md](docs/bootstrap.m
   one. Better still is a credential nobody writes down: CloudNativePG generates
   the database passwords itself. See
   [ADR 0014](docs/decisions/0014-sops-as-the-only-secret-manager.md).
-- **Applications share one PostgreSQL**, run by the CloudNativePG operator in
-  the `databases` namespace — a database and role per app, not a database per
-  app.
+- **Each application gets its own PostgreSQL** `Cluster`, one instance, run by
+  the CloudNativePG operator in the app's namespace, with WAL archiving and a
+  daily backup to Garage on TrueNAS. See
+  [ADR 0020](docs/decisions/0020-one-postgres-per-app.md).
 - **Storage splits by whether the data can be rebuilt.** Application and database
-  data goes on `nfs` (the `portal` NAS) so it survives node loss and
+  data goes on `truenas` (NFS on the TrueNAS host) so it survives node loss and
   `homelab nuke`. The monitoring stack stays on node-local `local-path`, because
   it is reconstructible and is precisely what must keep working when the NAS
   does not. Both classes are marked default, so **every PVC names
   its class explicitly** and CI enforces it. See
-  [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and
-  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md).
+  [ADR 0006](docs/decisions/0006-nfs-default-storage.md),
+  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md) and
+  [ADR 0021](docs/decisions/0021-truenas-replaces-portal.md).
 - Comment the *why* on non-default settings. The reason a flag is set is the
   part that is expensive to rediscover.
 

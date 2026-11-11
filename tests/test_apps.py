@@ -86,7 +86,7 @@ def test_every_volume_claim_names_its_storage_class(app):
 
     Two StorageClasses are marked default in this cluster: k3s recreates
     local-path as default and we cannot stop it (it is a wrangler objectset
-    re-applied on every server start), while nfs is default for applications.
+    re-applied on every server start), while truenas is default for applications.
     Kubernetes resolves a tie between defaults by creation timestamp, so an
     omitted class is not "the sensible one" — it is whichever StorageClass
     happened to be created last, and that can differ after every rebuild.

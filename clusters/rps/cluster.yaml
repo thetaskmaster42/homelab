@@ -29,7 +29,7 @@ spec:
     # we cannot stop it: the addon is a wrangler objectset (owner-gvk
     # k3s.cattle.io/v1, Kind=Addon) re-applied on every server start, so an
     # annotation flip from ArgoCD would be two controllers fighting over one
-    # object. So `nfs` is default too, and TWO defaults exist. That is safe only
+    # object. So `truenas` is default too, and TWO defaults exist. That is safe only
     # because nothing relies on the default: every PVC in this repo names its
     # class explicitly, and tests/test_apps.py fails the build if one does not.
     #
@@ -88,7 +88,7 @@ spec:
       # worker-2" outlived the hardware it described and is still repeated in
       # older notes.
       #
-      # It is doubly moot now: every PVC is NFS-backed on `portal`, so volume
+      # It is doubly moot now: every app PVC is NFS-backed on TrueNAS, so volume
       # size is bounded by the NAS rather than by whichever node schedules the
       # pod. Ephemeral storage — image layers, emptyDir, container logs — is
       # still node-local, and on that axis this node now has the most headroom.
