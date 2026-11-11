@@ -113,7 +113,7 @@ it removes a whole class of ordering bugs that explicit sequencing would create.
 are different scripts; using the wrong one leaves a broken install behind.
 
 **Application data survives this; the monitoring stack does not.** PVCs on the
-`nfs` class use `reclaimPolicy: Retain`, so a nuke leaves them on `portal`
+`truenas` class use `reclaimPolicy: Retain`, so a nuke leaves them on TrueNAS
 untouched. Prometheus and Grafana are on `local-path`
 ([ADR 0008](decisions/0008-local-disk-for-observability-and-secrets.md)), which
 lives under `/var/lib/rancher/k3s/storage` and is erased outright — expect to
@@ -121,6 +121,6 @@ start metrics from empty after every rebuild. `nuke` lists the PVCs on each side
 
 Surviving is not the same as coming back. `Retain` leaves each PV behind in
 `Released`, and a rebuilt cluster provisions *fresh* directories rather than
-reattaching the old ones. The data sits under the export on `portal` until you
+reattaching the old ones. The data sits under the export on TrueNAS until you
 either point a new PVC at it with a hand-written PV, or delete it to reclaim the
 space. Nothing does that automatically, by design.

@@ -1,6 +1,6 @@
 """OS packages the cluster needs before workloads can use it.
 
-This exists because of a real failure: the nfs-provisioner service synced
+This exists because of a real failure: the NFS provisioner service synced
 cleanly and its pod then sat in ContainerCreating forever with
 `mount failed: exit status 32`. The cause was that no node had `nfs-common`, so
 there was no /sbin/mount.nfs helper. ArgoCD cannot fix that — mounting happens
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from ..runner import Runner
 
-# nfs-common: /sbin/mount.nfs, required by infra/services/nfs-provisioner.
+# nfs-common: /sbin/mount.nfs, required by infra/services/nfs-truenas.
 # ethtool:    required by the eee-off unit and by netsnap.sh; present on the
 #             current images, but assuming that is how a rebuild fails.
 REQUIRED_PACKAGES = ("nfs-common", "ethtool")

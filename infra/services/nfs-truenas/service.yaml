@@ -1,17 +1,26 @@
-# Dynamic PersistentVolumes backed by TrueNAS SCALE (192.168.11.4) -- the
-# successor to `portal`. See docs/decisions/0021-truenas-replaces-portal.md.
+# Dynamic PersistentVolumes backed by TrueNAS SCALE (192.168.11.4). The default
+# class for application data; k3s's local-path sits alongside it for the
+# workloads that must survive a NAS outage (ADR 0008).
 #
-# A SECOND provisioner rather than repointing nfs-provisioner, because a
-# provisioned PV's `spec.nfs.server` is immutable: repointing the existing
-# Application would strand every volume it has already created on `portal`,
-# not move it. Running both lets each app move across on its own PR, with the
-# old volume still intact behind it, and `portal` is retired only once nothing
-# binds to the `nfs` class.
+# This exists to solve node-pinning, not capacity. The built-in `local-path`
+# StorageClass binds a volume to whichever node first scheduled its pod, and
+# that pod can then never move — it cannot be rescheduled if the node dies, and
+# `homelab nuke` destroys the data outright.
 #
-# Same chart and version as nfs-provisioner on purpose -- the two must behave
-# identically so that moving an app changes where its bytes live and nothing
-# else. The release name differs, which is what keeps them apart: the chart
-# derives both the provisioner name and its helper PV from it.
+# It replaced `portal` (an OpenMediaVault Pi behind the old `nfs` class and the
+# nfs-provisioner Application) app by app — see
+# docs/decisions/0021-truenas-replaces-portal.md. That was a SECOND provisioner
+# rather than repointing the first because a provisioned PV's
+# `spec.nfs.server` is immutable: repointing would have stranded every existing
+# volume, not moved it. The same holds for any future NAS move.
+#
+# The release name is what keeps it distinct: the chart derives both the
+# provisioner name and its helper PV from it, so keep it if this file moves.
+#
+# The cost of application state being here is concentration: this Application
+# and the NAS behind it are a single point of failure for all of it. ZFS
+# snapshots and the barman archive (also on this host) cover deletion and bad
+# migrations, not losing the box.
 name: nfs-truenas
 namespace: storage
 extraManifests: "false"

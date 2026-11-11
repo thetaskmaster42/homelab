@@ -7,7 +7,10 @@ barman archiving to Garage, and `memos-pg` recovered from that archive onto
 `truenas`, then cut over; the `nfs`-backed `memos-db` is deleted. Phase 4 done
 (2026-11-10): `memos-data` → `memos-files` and `rh-dashboard` →
 `rh-dashboard-data`, copied with `cp -a` and verified by per-file md5 and
-owner/mode. No workload consumes `nfs` any more. Next: phase 5.
+owner/mode. Phase 5 done (2026-11-11): `truenas` is the default class and
+`nfs-provisioner` is removed, taking the `nfs` StorageClass with it. Next:
+phase 6, retiring `portal` — its Released PVs are the only things that still
+name 192.168.11.3.
 
 Phase 4 was forced by a portal outage: with Postgres already moved, the memos
 pod still hung in `ContainerCreating` on `memos-data`, because a provisioned

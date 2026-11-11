@@ -22,23 +22,28 @@ routine drill, not an emergency. Prefer designs that survive being destroyed.
 - **This GitHub repo is public.** Never commit a plaintext credential. Secrets
   are SOPS-encrypted with age.
 - **Chart versions are pinned.** `targetRevision: '*'` is banned; CI rejects it.
-- **Backups exist but are UNPROVEN.** Every CloudNativePG cluster archives WAL
-  and takes a daily base backup through the Barman Cloud plugin
-  (`infra/services/barman-cloud/`) to Garage S3 on TrueNAS
+- **Postgres backups go to the same box as the data.** Every CloudNativePG
+  cluster archives WAL and takes a daily base backup through the Barman Cloud
+  plugin (`infra/services/barman-cloud/`) to Garage S3 on TrueNAS
   (`192.168.11.4:30188`, bucket `cnpg-backups`, one prefix per app) — see each
-  app's `backup.yaml`. **No restore has been performed yet**, so treat them as
-  unverified until one has; the first is the TrueNAS migration's Postgres step
-  ([ADR 0021](docs/decisions/0021-truenas-replaces-portal.md)). There is no
-  replica either ([ADR 0020](docs/decisions/0020-one-postgres-per-app.md)).
+  app's `backup.yaml`. One restore has been proven: `memos-pg` was recovered
+  from the archive in under two minutes
+  ([ADR 0021](docs/decisions/0021-truenas-replaces-portal.md) phase 3). But
+  live volumes and backups share one TrueNAS host, and there is no replica
+  ([ADR 0020](docs/decisions/0020-one-postgres-per-app.md)).
   `opengym`'s `/srv/opengym/data` holds WebAuthn passkeys that cannot be
   re-issued, on one SD card, and nothing backs it up.
-- **Two StorageClasses, and TWO defaults.** `nfs` (on `portal`, 192.168.11.3)
-  holds application data; k3s's `local-path` holds the monitoring stack, which
+- **Two StorageClasses, and TWO defaults.** `truenas` (NFS on TrueNAS,
+  192.168.11.4, `/mnt/tank/k8s-nfs`) holds application data; k3s's
+  `local-path` holds the monitoring stack, which
   must survive a NAS outage. k3s marks `local-path` default and cannot be stopped
   from doing so, so a PVC naming no class resolves *arbitrarily*. **Every PVC
   must name its class explicitly** — `tests/test_apps.py` fails the build
-  otherwise. See [ADR 0006](docs/decisions/0006-nfs-default-storage.md) and
-  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md).
+  otherwise. A PVC's class — and a PV's NFS server — are immutable, so moving
+  a volume means a *new* claim plus a copy, never an edit. See
+  [ADR 0006](docs/decisions/0006-nfs-default-storage.md),
+  [ADR 0008](docs/decisions/0008-local-disk-for-observability-and-secrets.md)
+  and [ADR 0021](docs/decisions/0021-truenas-replaces-portal.md).
 
 ## Architecture
 
@@ -183,7 +188,7 @@ installs the **operator only** (`extraManifests: "false"`).
 Two things to know before touching a `Cluster`:
 
 - **Do not add replicas by copy-paste.** Three instances was theatre here: every
-  volume is on the same NAS, so `portal` going away takes the whole cluster
+  volume is on the same NAS, so the NAS going away takes the whole cluster
   anyway, and a k3s-server blackhole restarts all of them together regardless.
   Replicas cover node loss; they do nothing about a bad migration or a wrong
   `DELETE`, which is what actually needs backups. If an app genuinely needs
@@ -251,11 +256,37 @@ There is no build. Everything is validation or cluster operations.
 
 ```sh
 uv run homelab init | install | bootstrap | status | nuke --yes
-uv run pytest                       # CLI unit tests
-make validate                       # yamllint + helm render + kubeconform + arm64 + sops
+uv run homelab install --dry-run    # print the commands; install/bootstrap/nuke all take it
+make validate                       # everything CI runs: lint + test-fast + test-cli + test-render
+make test-fast                      # repo checks, no network (schema, pinning, PVC classes, sops)
+make test-render                    # helm/kustomize render + arm64 manifest lookup (network)
+make test-cli                       # CLI unit tests (cli/tests)
+make arm64                          # just the arm64 check — run before adopting a new chart/image
+make golden                         # regenerate CLI golden files; they pin the k3s flags, review the diff
 kubectl kustomize apps/<name>       # render one app overlay
 kubectl -n argocd get applications  # what ArgoCD thinks is deployed
 ```
+
+There are two pytest suites. `tests/` (root `pytest.ini`) validates the
+declarative tree; tests needing network are marked `network`. `cli/tests/` is
+the CLI's unit suite and runs from inside `cli/`. A bare `uv run pytest` at the
+root runs `tests/` — network tests included — not the CLI suite. Single tests:
+
+```sh
+uv run --with pytest --with pyyaml pytest tests/test_apps.py -k memos -q
+cd cli && uv run --with pytest python -m pytest tests/test_k3s_commands.py::test_token_is_shell_quoted -q
+```
+
+The CLI suite validates against the real `clusters/rps/cluster.yaml`, not a
+fixture, so editing that file can break CLI tests.
+
+Registration contracts: `apps/<name>/app.yaml` needs exactly `name`,
+`namespace`, `sourceRepo`, `exposure` (the ApplicationSet uses
+`missingkey=error`, so a missing one means no Application is generated, with
+no error). `infra/services/<name>/service.yaml` needs `name`, `namespace`,
+`extraManifests` (the string `"true"`/`"false"`), and `chart.{repo,name,version}`;
+raw CRs go in its `manifests/`. Walkthroughs: `docs/adding-infra-service.md`,
+`docs/adding-application.md`, `docs/runbooks/`.
 
 Exposure is via Tailscale (tailnet `mongoose-galaxy.ts.net`), not NodePorts or
 port forwarding. `ingressClassName: tailscale` gives a private tailnet host; the

@@ -1,29 +1,44 @@
 nfs:
-  # TrueNAS SCALE. Addressed by IP, like `portal`, and therefore needs a static
+  # TrueNAS SCALE. Addressed by IP rather than a name, and therefore needs a static
   # address or a DHCP reservation: a lease change would hang every pod on this
   # class (see `hard` below), not just fail new mounts.
   server: 192.168.11.4
-  # The FULL dataset path. Unlike OpenMediaVault, SCALE has no `/export` fsid=0
-  # pseudo-root, so the NFSv4 path is the server-side path -- the opposite of
-  # the trap documented in nfs-provisioner/values.yaml. Verified by a kubelet
-  # mount from k3s-worker-1 with exactly these options.
+  # The FULL dataset path. Unlike OpenMediaVault (the old `portal` NAS), SCALE
+  # has no `/export` fsid=0 pseudo-root, so the NFSv4 path IS the server-side
+  # path. On OMV it was the reverse, and `showmount -e` -- which speaks v3 and
+  # prints server-side paths -- was actively misleading about it. Verified by a
+  # kubelet mount from k3s-worker-1 with exactly these options.
   path: /mnt/tank/k8s-nfs
   mountOptions:
     - nfsvers=4.1
-    # `hard`, `timeo` and `retrans` match nfs-provisioner exactly; the reasoning
-    # (block rather than hand Postgres an EIO it reads as corruption) is there.
+    # `hard`, not `soft`: a soft mount returns EIO to the application when the
+    # NAS is slow, and Postgres treats a short read/write as corruption rather
+    # than as a retryable error. Blocking is the safe failure mode; losing data
+    # quietly is not.
     - hard
+    # timeo is in DECIseconds, so this is 60s, and retrans=2 means the client
+    # logs "server not responding" after ~3 minutes. Under `hard` it then keeps
+    # retrying forever -- these only control how quickly the problem becomes
+    # visible in the kernel log, not whether I/O eventually gives up. Every pod
+    # on this class blocks in uninterruptible sleep until the NAS returns.
     - timeo=600
     - retrans=2
 
 storageClass:
   name: truenas
-  # NOT default while `portal` is still serving. Two defaults already exist
-  # (nfs + k3s's local-path) and every PVC names its class anyway; flipping this
-  # is the last migration step, together with removing nfs-provisioner.
-  defaultClass: false
-  # Retain + archive for the same reason as `nfs`: this storage exists so data
-  # outlives the cluster, and a rebuild must not be able to erase it.
+  # Default for applications -- but NOT the only default. k3s's bundled
+  # local-path marks itself default in a way we cannot override without two
+  # controllers fighting over one object (ADR 0008), so both are flagged.
+  #
+  # That is safe only because nothing in this repo relies on the default: every
+  # PVC names its class, and tests/test_apps.py fails the build if one does not.
+  # Kubernetes breaks a tie between defaults by creation timestamp, so an
+  # inherited class would be arbitrary and could differ between rebuilds.
+  # Kept true regardless: it states the intent, and gives the right answer for
+  # anything created by hand outside the repo.
+  defaultClass: true
+  # Retain, not Delete: this storage exists precisely so that data outlives the
+  # cluster. A rebuild must not be able to erase it.
   reclaimPolicy: Retain
   archiveOnDelete: true
   accessModes: ReadWriteMany
